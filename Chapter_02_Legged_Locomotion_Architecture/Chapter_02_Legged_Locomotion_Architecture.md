@@ -1,0 +1,1376 @@
+**Volume 21. Quadruped Robot Software**
+
+
+# Chapter 02. Legged Locomotion Architecture
+
+##  
+
+## 02.01. Locomotion Control Stack Architecture Overview
+
+![](images/image1.png){width="7.268055555555556in" height="7.268055555555556in"}
+
+Legged locomotion control is commonly organized as a hierarchical stack that converts high-level motion objectives into dynamically feasible joint commands. Unlike wheeled robots, a legged robot continuously changes its contact relationship with the environment. The control architecture must therefore coordinate perception, state estimation, planning, whole-body dynamics, contact management, and actuator control under strict real-time constraints.
+
+At the highest level, the locomotion stack receives mission-oriented commands such as desired position, heading, velocity, destination, or navigation trajectory. These commands may originate from an autonomous navigation system, teleoperation interface, manipulation planner, or task-level Physical AI system. The locomotion controller translates these abstract objectives into body motion while respecting terrain geometry, stability limits, actuator capability, and environmental constraints.
+
+A typical architecture separates locomotion functions according to their characteristic time scales. Global navigation and terrain reasoning may operate relatively slowly, while local motion planning executes more frequently. Whole-body control and model-based stabilization generally require much faster update rates, and motor current or torque control operates at the fastest level. This multi-rate structure allows computationally expensive reasoning to coexist with highly responsive physical stabilization.
+
+State estimation forms a foundational layer because almost every controller depends on an accurate representation of the robot\'s physical state. Measurements from joint encoders, inertial measurement units, force sensors, cameras, LiDAR, and other sensors are fused to estimate body pose, velocity, joint configuration, contact state, and sometimes terrain properties. Errors in these estimates directly propagate into foot placement, balance control, and whole-body motion.
+
+Terrain perception extends state estimation from the robot itself to the surrounding environment. Depth cameras, stereo vision, LiDAR, or learned perception models can generate elevation maps, traversability maps, semantic representations, and local geometric descriptions. The locomotion system uses this information to identify feasible footholds, obstacles, slopes, gaps, stairs, deformable surfaces, and regions that may produce unreliable contact.
+
+A local locomotion planner converts the desired direction of travel and perceived terrain into a short-horizon motion strategy. Depending on the architecture, it may determine body trajectories, velocity references, gait parameters, contact sequences, or candidate footholds. Rather than solving the entire navigation problem, this layer repeatedly replans over a limited horizon so that the robot can respond to newly observed terrain and disturbances.
+
+Gait scheduling defines when individual legs should remain in stance or transition into swing. Walking, trotting, pacing, bounding, crawling, and dynamically generated behaviors can all be represented through different contact schedules. In conventional architectures these schedules may be predefined, whereas optimization-based and learning-based systems can adapt contact timing according to velocity, terrain, disturbance, energy consumption, and stability requirements.
+
+Footstep planning determines where the feet should contact the environment. Simple controllers may calculate footholds from desired body velocity and nominal gait geometry, while advanced systems optimize foothold locations using terrain maps and dynamic constraints. The planner must avoid unsafe surfaces while maintaining sufficient support geometry, kinematic reachability, collision clearance, and favorable conditions for subsequent body motion.
+
+Trajectory generation connects discrete contact decisions to continuous robot motion. Swing-foot trajectories must provide ground clearance, controlled touchdown velocity, and feasible joint motion. Simultaneously, the desired trajectory of the trunk or center of mass must remain compatible with the support configuration. Smooth trajectories are especially important because discontinuous position, velocity, or acceleration references can create undesirable impact forces and actuator transients.
+
+Model Predictive Control, or MPC, is frequently used to coordinate short-horizon body dynamics and contact forces. MPC predicts future robot behavior using a dynamic model and optimizes control variables while considering desired motion and physical constraints. Depending on implementation complexity, the model may represent centroidal dynamics, rigid-body dynamics, or a more complete formulation of the robot.
+
+Through repeated optimization, MPC can calculate desired ground reaction forces, body accelerations, momentum trajectories, or contact decisions. Because the optimization is performed over a moving horizon, the controller continuously incorporates updated state estimates and motion objectives. This makes MPC particularly valuable for dynamic quadruped locomotion where future contact conditions strongly influence present control decisions.
+
+Whole-Body Control, or WBC, converts body-level and contact-level objectives into commands that are consistent with the robot\'s full multibody dynamics. It simultaneously considers trunk orientation, center-of-mass motion, swing-leg tracking, stance constraints, joint limits, contact forces, and other objectives. Optimization techniques such as quadratic programming are commonly employed to resolve competing tasks while satisfying dynamic constraints.
+
+The relationship between MPC and WBC is important in many modern locomotion stacks. MPC can determine the desired evolution of global body dynamics and ground reaction forces, while WBC realizes those objectives using the complete joint-level model. This division allows the predictive controller to remain computationally manageable while the whole-body controller handles detailed kinematics, joint constraints, and contact consistency.
+
+At the lower level, joint controllers translate desired joint positions, velocities, or torques into actuator commands. Position control may be adequate for slow or highly constrained motions, but dynamic locomotion often benefits from torque control or impedance control. Impedance behavior allows the leg to respond compliantly to unexpected terrain while still tracking desired motion, reducing impact sensitivity and improving physical interaction robustness.
+
+Contact estimation provides another essential feedback path across the architecture. A planned stance foot may lose contact, touch down earlier than expected, or encounter a compliant surface. Force sensors, motor torque estimates, joint dynamics, and inertial measurements can be used to infer actual contact conditions. The control stack must distinguish planned contact from measured contact and react appropriately when the two disagree.
+
+Disturbance rejection is therefore distributed rather than confined to a single controller. Fast joint and impedance loops respond immediately to local interaction changes, whole-body control redistributes forces among available contacts, and MPC can modify future force or motion trajectories. Higher-level planners may subsequently change footholds or gait patterns. Hierarchical response allows disturbances to be handled at the fastest meaningful control level.
+
+Real-time communication is critical because locomotion depends on synchronized information flowing between sensors, estimators, planners, controllers, and actuators. Timestamp errors, network jitter, delayed measurements, or asynchronous sensor streams can degrade stability even when individual algorithms are correct. Practical systems therefore require deterministic communication, accurate time synchronization, bounded computation latency, and explicit monitoring of stale or missing data.
+
+The software architecture often reflects this hierarchy through modular processes or nodes connected by well-defined interfaces. Perception publishes terrain information, estimation publishes robot state, planners generate references, controllers calculate dynamic commands, and hardware interfaces communicate with actuators. Middleware such as ROS 2 can support modular integration, while safety-critical high-frequency loops may execute through dedicated real-time processes or embedded controllers.
+
+Safety supervision should remain logically independent from normal locomotion optimization. A supervisory layer monitors orientation, joint limits, actuator temperature, communication health, battery state, excessive contact force, estimator confidence, and controller divergence. When predefined limits are exceeded, it can reduce speed, transition to a safer gait, command a controlled stop, lower the body, or activate hardware-level protective behavior.
+
+Learning-based locomotion introduces an alternative or complementary pathway within this stack. A reinforcement-learning policy may directly generate joint targets, desired torques, foot trajectories, or latent locomotion commands from observations. However, learned policies still require state estimation, actuator interfaces, safety constraints, and often terrain perception. Consequently, learning usually modifies selected layers rather than eliminating the need for an overall control architecture.
+
+Hybrid architectures combine learned policies with model-based control to exploit the strengths of both approaches. Learning can capture complex terrain adaptation and nonlinear behaviors that are difficult to model explicitly, while model-based optimization provides interpretable constraints and predictable dynamic structure. A learned foothold selector, terrain encoder, residual controller, or gait policy can therefore operate together with MPC, WBC, and impedance control.
+
+The architecture must also manage uncertainty because neither perception nor dynamics are perfectly known. Terrain geometry may contain reconstruction errors, friction coefficients may be unknown, payload changes can modify inertial properties, and actuator characteristics can vary with temperature or battery condition. Robust controllers, adaptive estimation, uncertainty-aware planning, and conservative safety margins help prevent small modeling errors from developing into unstable locomotion.
+
+For Physical AI systems, the locomotion stack can be understood as the bridge between embodied intelligence and physical execution. High-level intelligence determines what the robot should accomplish, perception and estimation determine the current physical situation, planning determines feasible future actions, and control converts those actions into forces and motion. Continuous feedback from the physical world closes this perception-action loop.
+
+A well-designed locomotion architecture is therefore not simply a chain of independent algorithms. It is a coordinated hierarchy in which information moves both downward and upward. Commands propagate toward actuators, while state, contact, disturbance, and confidence information propagate toward planning and reasoning layers. The quality of these interfaces often determines overall performance as strongly as the sophistication of any individual algorithm.
+
+Ultimately, robust legged locomotion emerges from the integration of estimation, terrain understanding, gait and foothold planning, predictive dynamics, whole-body coordination, actuator control, and safety supervision. The architecture must maintain stable operation across different computational rates while reacting rapidly to physical events. This integrated control stack provides the foundation upon which advanced quadruped navigation, manipulation, learning, and autonomous Physical AI behaviors can be built.
+
+다리형 이동 제어(Legged Locomotion Control)는 일반적으로 상위 수준의 이동 목표를 동역학적으로 실행 가능한 관절 명령(Joint Command)으로 변환하는 계층형 스택(Hierarchical Stack)으로 구성된다. 바퀴형 로봇(Wheeled Robot)과 달리 다리형 로봇(Legged Robot)은 환경과의 접촉 관계(Contact Relationship)가 지속적으로 변화한다. 따라서 제어 아키텍처(Control Architecture)는 엄격한 실시간 제약(Real-Time Constraint) 아래에서 인지(Perception), 상태 추정(State Estimation), 계획(Planning), 전신 동역학(Whole-Body Dynamics), 접촉 관리(Contact Management), 액추에이터 제어(Actuator Control)를 통합적으로 조정해야 한다.
+
+가장 상위 수준에서 이동 스택(Locomotion Stack)은 목표 위치, 진행 방향(Heading), 속도, 목적지 또는 내비게이션 궤적(Navigation Trajectory)과 같은 임무 지향 명령(Mission-Oriented Command)을 입력받는다. 이러한 명령은 자율 내비게이션 시스템(Autonomous Navigation System), 원격 조작 인터페이스(Teleoperation Interface), 조작 계획기(Manipulation Planner) 또는 작업 수준 피지컬 AI 시스템(Task-Level Physical AI System)에서 생성될 수 있다. 이동 제어기(Locomotion Controller)는 지형 형상, 안정성 한계, 액추에이터 성능 및 환경 제약을 고려하여 이러한 추상적인 목표를 몸체 움직임으로 변환한다.
+
+일반적인 아키텍처에서는 이동 기능(Locomotion Function)을 각각의 특성 시간 척도(Characteristic Time Scale)에 따라 분리한다. 전역 내비게이션(Global Navigation)과 지형 추론(Terrain Reasoning)은 비교적 낮은 주기로 동작할 수 있지만, 지역 이동 계획(Local Motion Planning)은 더 높은 빈도로 실행된다. 전신 제어(Whole-Body Control)와 모델 기반 안정화(Model-Based Stabilization)는 일반적으로 훨씬 빠른 갱신 주기가 필요하며, 모터 전류 또는 토크 제어(Motor Current or Torque Control)는 가장 빠른 수준에서 동작한다. 이러한 다중 주기 구조(Multi-Rate Structure)를 통해 계산량이 많은 추론과 매우 빠른 물리적 안정화를 동시에 수행할 수 있다.
+
+상태 추정(State Estimation)은 거의 모든 제어기가 로봇의 정확한 물리 상태 표현에 의존하기 때문에 기본적인 계층을 형성한다. 관절 인코더(Joint Encoder), 관성 측정 장치(Inertial Measurement Unit, IMU), 힘 센서(Force Sensor), 카메라(Camera), 라이다(LiDAR) 및 기타 센서의 측정값을 융합하여 몸체 자세(Body Pose), 속도, 관절 구성(Joint Configuration), 접촉 상태(Contact State), 경우에 따라 지형 특성(Terrain Property)까지 추정한다. 이러한 추정값의 오차는 발 위치 결정(Foot Placement), 균형 제어(Balance Control), 전신 운동(Whole-Body Motion)에 직접적으로 전파된다.
+
+지형 인지(Terrain Perception)는 상태 추정의 범위를 로봇 자체에서 주변 환경으로 확장한다. 깊이 카메라(Depth Camera), 스테레오 비전(Stereo Vision), 라이다 또는 학습 기반 인지 모델(Learning-Based Perception Model)을 사용하여 고도 맵(Elevation Map), 주행 가능성 맵(Traversability Map), 의미론적 표현(Semantic Representation), 지역 기하학적 표현(Local Geometric Description)을 생성할 수 있다. 이동 시스템은 이를 활용하여 실행 가능한 발 디딤 위치(Feasible Foothold), 장애물, 경사면, 틈새, 계단, 변형 가능한 표면 및 신뢰하기 어려운 접촉이 발생할 수 있는 영역을 식별한다.
+
+지역 이동 계획기(Local Locomotion Planner)는 원하는 이동 방향과 인식된 지형 정보를 단기 구간 이동 전략(Short-Horizon Motion Strategy)으로 변환한다. 아키텍처에 따라 몸체 궤적(Body Trajectory), 속도 기준값(Velocity Reference), 보행 파라미터(Gait Parameter), 접촉 순서(Contact Sequence) 또는 후보 발 디딤 위치(Candidate Foothold)를 결정할 수 있다. 전체 내비게이션 문제를 한 번에 해결하는 대신 제한된 예측 구간(Limited Horizon)에 대해 반복적으로 재계획하여 새롭게 관측되는 지형과 외란(Disturbance)에 대응한다.
+
+보행 스케줄링(Gait Scheduling)은 각각의 다리가 언제 지지 상태(Stance)에 유지되고 언제 스윙 상태(Swing)로 전환되는지를 정의한다. 워킹(Walking), 트로팅(Trotting), 페이싱(Pacing), 바운딩(Bounding), 크롤링(Crawling) 및 동적으로 생성되는 다양한 행동은 서로 다른 접촉 스케줄(Contact Schedule)로 표현할 수 있다. 전통적인 아키텍처에서는 이러한 스케줄이 사전에 정의될 수 있지만, 최적화 기반 및 학습 기반 시스템에서는 속도, 지형, 외란, 에너지 소비 및 안정성 요구조건에 따라 접촉 시점(Contact Timing)을 적응적으로 변경할 수 있다.
+
+발걸음 계획(Footstep Planning)은 발이 환경의 어느 위치와 접촉해야 하는지를 결정한다. 단순한 제어기는 원하는 몸체 속도와 기준 보행 기하학(Nominal Gait Geometry)을 이용하여 발 디딤 위치를 계산하지만, 고급 시스템은 지형 맵(Terrain Map)과 동역학적 제약(Dynamic Constraint)을 이용하여 발 디딤 위치를 최적화한다. 계획기는 위험한 표면을 피하면서 충분한 지지 기하 구조(Support Geometry), 운동학적 도달 가능성(Kinematic Reachability), 충돌 여유(Collision Clearance), 이후 몸체 이동에 유리한 조건을 동시에 확보해야 한다.
+
+궤적 생성(Trajectory Generation)은 이산적인 접촉 결정(Discrete Contact Decision)을 연속적인 로봇 움직임으로 연결한다. 스윙 발 궤적(Swing-Foot Trajectory)은 지면과의 충분한 간격(Ground Clearance), 제어된 착지 속도(Touchdown Velocity), 실행 가능한 관절 움직임을 제공해야 한다. 동시에 몸통(Trunk) 또는 질량 중심(Center of Mass)의 목표 궤적은 지지 구성(Support Configuration)과 양립할 수 있어야 한다. 위치, 속도 또는 가속도 기준값이 불연속적이면 불필요한 충격력과 액추에이터 과도 응답(Actuator Transient)이 발생할 수 있으므로 부드러운 궤적 생성이 특히 중요하다.
+
+모델 예측 제어(Model Predictive Control, MPC)는 단기 구간의 몸체 동역학(Body Dynamics)과 접촉력(Contact Force)을 조정하기 위해 널리 사용된다. MPC는 동역학 모델(Dynamic Model)을 이용하여 미래의 로봇 거동을 예측하고, 원하는 움직임과 물리적 제약조건을 고려하면서 제어 변수(Control Variable)를 최적화한다. 구현 복잡도에 따라 모델은 질량 중심 동역학(Centroidal Dynamics), 강체 동역학(Rigid-Body Dynamics) 또는 보다 완전한 형태의 로봇 동역학을 표현할 수 있다.
+
+MPC는 반복적인 최적화를 통해 목표 지면 반력(Desired Ground Reaction Force), 몸체 가속도(Body Acceleration), 운동량 궤적(Momentum Trajectory) 또는 접촉 결정(Contact Decision)을 계산할 수 있다. 이동 예측 구간(Moving Horizon)을 기반으로 최적화가 반복 수행되기 때문에 제어기는 갱신된 상태 추정값과 이동 목표를 지속적으로 반영한다. 이러한 특성으로 인해 미래의 접촉 조건이 현재의 제어 결정에 강하게 영향을 미치는 동적 사족보행(Dynamic Quadruped Locomotion)에서 MPC는 특히 유용하다.
+
+전신 제어(Whole-Body Control, WBC)는 몸체 수준 및 접촉 수준의 목표를 로봇의 전체 다물체 동역학(Full Multibody Dynamics)에 부합하는 명령으로 변환한다. 몸통 자세(Trunk Orientation), 질량 중심 운동(Center-of-Mass Motion), 스윙 다리 추종(Swing-Leg Tracking), 지지 접촉 제약(Stance Constraint), 관절 한계(Joint Limit), 접촉력 및 기타 목표를 동시에 고려한다. 경쟁 관계에 있는 여러 작업을 조정하면서 동역학적 제약을 만족시키기 위해 이차 계획법(Quadratic Programming, QP)과 같은 최적화 기법이 일반적으로 사용된다.
+
+MPC와 WBC의 관계는 현대적인 이동 스택에서 매우 중요하다. MPC는 전역적인 몸체 동역학과 지면 반력의 목표 변화를 결정할 수 있으며, WBC는 전체 관절 수준 모델(Joint-Level Model)을 사용하여 이러한 목표를 실제로 구현한다. 이러한 역할 분리는 예측 제어기의 계산 복잡도를 관리 가능한 수준으로 유지하면서 전신 제어기가 세부 운동학, 관절 제약 및 접촉 일관성(Contact Consistency)을 처리하도록 한다.
+
+하위 수준에서 관절 제어기(Joint Controller)는 목표 관절 위치, 속도 또는 토크를 액추에이터 명령으로 변환한다. 위치 제어(Position Control)는 느리거나 제약이 많은 움직임에서는 충분할 수 있지만, 동적 이동에서는 토크 제어(Torque Control) 또는 임피던스 제어(Impedance Control)가 더욱 효과적인 경우가 많다. 임피던스 특성(Impedance Behavior)을 적용하면 다리가 목표 움직임을 추종하면서 예상하지 못한 지형에 순응적으로 반응할 수 있어 충격 민감도를 줄이고 물리적 상호작용의 강건성(Robustness)을 향상시킬 수 있다.
+
+접촉 추정(Contact Estimation)은 전체 아키텍처를 연결하는 또 하나의 핵심 피드백 경로를 제공한다. 계획상 지지 상태인 발이 접촉을 잃거나 예상보다 일찍 착지하거나 유연한 표면(Compliant Surface)을 만날 수 있다. 힘 센서, 모터 토크 추정값, 관절 동역학 및 관성 측정값을 이용하여 실제 접촉 상태를 추론할 수 있다. 제어 스택은 계획된 접촉(Planned Contact)과 측정된 접촉(Measured Contact)을 구분하고 두 상태가 일치하지 않을 경우 적절하게 대응해야 한다.
+
+따라서 외란 제거(Disturbance Rejection)는 하나의 제어기에 국한되지 않고 전체 계층에 분산된다. 빠른 관절 및 임피던스 제어 루프는 지역적인 상호작용 변화에 즉각 대응하고, 전신 제어는 사용 가능한 접촉점 사이에서 힘을 재분배하며, MPC는 미래의 힘 또는 이동 궤적을 수정할 수 있다. 이후 상위 계획기는 발 디딤 위치나 보행 패턴을 변경할 수 있다. 이러한 계층적 대응(Hierarchical Response)은 외란을 의미 있는 가장 빠른 제어 수준에서 처리할 수 있도록 한다.
+
+실시간 통신(Real-Time Communication)은 이동 제어가 센서, 추정기, 계획기, 제어기 및 액추에이터 사이에서 동기화된 정보 흐름에 의존하기 때문에 매우 중요하다. 타임스탬프 오류(Timestamp Error), 네트워크 지터(Network Jitter), 측정 지연 또는 비동기 센서 스트림(Asynchronous Sensor Stream)은 개별 알고리즘이 정확하더라도 안정성을 저하시킬 수 있다. 따라서 실제 시스템에서는 결정론적 통신(Deterministic Communication), 정확한 시간 동기화(Time Synchronization), 제한된 계산 지연(Bounded Computation Latency), 오래되거나 누락된 데이터에 대한 명시적 감시가 필요하다.
+
+소프트웨어 아키텍처(Software Architecture)는 일반적으로 이러한 계층 구조를 명확하게 정의된 인터페이스로 연결된 모듈형 프로세스(Modular Process) 또는 노드(Node) 형태로 구현한다. 인지 모듈은 지형 정보를 제공하고, 상태 추정 모듈은 로봇 상태를 제공하며, 계획기는 기준 명령을 생성하고, 제어기는 동역학적 명령을 계산하며, 하드웨어 인터페이스(Hardware Interface)는 액추에이터와 통신한다. ROS 2와 같은 미들웨어(Middleware)는 모듈형 통합을 지원할 수 있으며, 안전이 중요한 고주파 제어 루프는 전용 실시간 프로세스 또는 임베디드 제어기(Embedded Controller)에서 실행할 수 있다.
+
+안전 감독(Safety Supervision)은 정상적인 이동 최적화 과정과 논리적으로 독립되어 있어야 한다. 감독 계층(Supervisory Layer)은 자세, 관절 한계, 액추에이터 온도, 통신 상태, 배터리 상태, 과도한 접촉력, 상태 추정 신뢰도(Estimator Confidence), 제어기 발산(Controller Divergence)을 감시한다. 사전에 정의된 한계를 초과하면 속도를 낮추거나, 더 안전한 보행으로 전환하거나, 제어 정지(Controlled Stop)를 수행하거나, 몸체를 낮추거나, 하드웨어 수준의 보호 동작을 활성화할 수 있다.
+
+학습 기반 이동(Learning-Based Locomotion)은 이러한 스택 내부에서 대안적이거나 보완적인 경로를 제공한다. 강화학습 정책(Reinforcement-Learning Policy)은 관측값으로부터 직접 관절 목표값, 목표 토크, 발 궤적 또는 잠재 이동 명령(Latent Locomotion Command)을 생성할 수 있다. 그러나 학습된 정책 역시 상태 추정, 액추에이터 인터페이스, 안전 제약 및 경우에 따라 지형 인지를 필요로 한다. 따라서 학습은 전체 제어 아키텍처의 필요성을 제거하기보다는 특정 계층의 기능을 변화시키거나 강화하는 방식으로 사용되는 경우가 많다.
+
+하이브리드 아키텍처(Hybrid Architecture)는 학습된 정책과 모델 기반 제어(Model-Based Control)를 결합하여 두 접근법의 장점을 활용한다. 학습은 명시적으로 모델링하기 어려운 복잡한 지형 적응과 비선형 행동을 포착할 수 있으며, 모델 기반 최적화는 해석 가능한 제약조건과 예측 가능한 동역학 구조를 제공한다. 따라서 학습 기반 발 디딤 위치 선택기(Learned Foothold Selector), 지형 인코더(Terrain Encoder), 잔차 제어기(Residual Controller), 보행 정책(Gait Policy)은 MPC, WBC 및 임피던스 제어와 함께 동작할 수 있다.
+
+아키텍처는 인지와 동역학 모델이 완벽하지 않기 때문에 불확실성(Uncertainty)도 관리해야 한다. 지형 형상에는 재구성 오류가 존재할 수 있고, 마찰 계수(Friction Coefficient)는 알려지지 않을 수 있으며, 탑재 하중(Payload)의 변화는 관성 특성을 변경할 수 있고, 액추에이터 특성은 온도나 배터리 상태에 따라 달라질 수 있다. 강건 제어(Robust Control), 적응형 추정(Adaptive Estimation), 불확실성 인지 계획(Uncertainty-Aware Planning), 보수적인 안전 여유(Safety Margin)는 작은 모델링 오차가 불안정한 이동으로 확대되는 것을 방지하는 데 도움을 준다.
+
+피지컬 AI(Physical AI) 시스템의 관점에서 이동 스택은 체화 지능(Embodied Intelligence)과 물리적 실행(Physical Execution)을 연결하는 다리로 이해할 수 있다. 상위 수준 지능은 로봇이 무엇을 수행해야 하는지를 결정하고, 인지와 상태 추정은 현재의 물리적 상황을 파악하며, 계획은 실행 가능한 미래 행동을 결정하고, 제어는 이러한 행동을 실제 힘과 움직임으로 변환한다. 물리 세계에서 지속적으로 돌아오는 피드백은 이러한 인지-행동 루프(Perception-Action Loop)를 폐루프(Closed Loop) 형태로 완성한다.
+
+잘 설계된 이동 아키텍처는 단순히 독립적인 알고리즘을 순서대로 연결한 구조가 아니다. 정보가 하향과 상향으로 동시에 이동하는 조정된 계층 구조(Coordinated Hierarchy)이다. 명령은 액추에이터 방향으로 전달되는 반면, 상태, 접촉, 외란 및 신뢰도 정보는 계획 및 추론 계층으로 다시 전달된다. 이러한 인터페이스의 품질은 개별 알고리즘의 정교함만큼이나 전체 시스템의 성능을 결정하는 중요한 요소가 된다.
+
+궁극적으로 강건한 다리형 이동(Robust Legged Locomotion)은 상태 추정, 지형 이해(Terrain Understanding), 보행 및 발 디딤 계획, 예측 동역학(Predictive Dynamics), 전신 협조 제어(Whole-Body Coordination), 액추에이터 제어 및 안전 감독을 통합함으로써 구현된다. 아키텍처는 서로 다른 계산 주기에서 안정적인 동작을 유지하면서 물리적 사건에 신속하게 대응해야 한다. 이러한 통합 제어 스택(Integrated Control Stack)은 고급 사족보행 내비게이션(Quadruped Navigation), 조작(Manipulation), 학습(Learning), 자율 피지컬 AI 행동(Autonomous Physical AI Behavior)을 구축하기 위한 핵심 기반을 제공한다.
+
+##  
+
+## 02.02. Model Based Locomotion MPC WBC Stack [w/Code]
+
+![](images/image2.png){width="7.268055555555556in" height="7.268055555555556in"}
+
+Model-based locomotion uses an explicit mathematical representation of robot dynamics to determine motions and forces that satisfy physical constraints. In quadruped systems, a widely used architecture combines Model Predictive Control (MPC) with Whole-Body Control (WBC). MPC reasons about future body motion and contact forces, while WBC converts these objectives into dynamically consistent joint-level commands.
+
+The fundamental advantage of this architecture is the separation between predictive motion optimization and detailed whole-body realization. Directly optimizing every joint, actuator, contact, and terrain interaction over a long horizon can become computationally expensive. Instead, MPC often employs a reduced-order dynamic model, while WBC uses a more complete multibody model to enforce instantaneous kinematic and dynamic consistency.
+
+The control process begins with a robot state estimate containing body position, orientation, linear and angular velocity, joint states, and estimated contact conditions. Desired velocity, heading, body height, or trajectory commands are provided by higher-level navigation or locomotion modules. Terrain perception may additionally supply surface geometry, foothold candidates, friction estimates, and constraints describing where reliable contacts can occur.
+
+A reference generator converts these inputs into desired body and contact trajectories. It may specify center-of-mass motion, trunk orientation, desired velocity, gait phase, and nominal foothold locations. These references provide targets rather than rigid commands because MPC must retain sufficient freedom to modify future motion when dynamic feasibility, contact limitations, or disturbances make the nominal trajectory undesirable.
+
+MPC repeatedly solves a finite-horizon optimal control problem. Starting from the current estimated state, it predicts how the robot will evolve over a sequence of future time steps. An objective function penalizes deviations from desired body position, velocity, orientation, momentum, or other references while also discouraging excessive control effort and undesirable variations in contact forces.
+
+The prediction model is a critical architectural choice. Many quadruped controllers use centroidal dynamics or simplified rigid-body dynamics because these models capture the dominant relationship between body motion and ground reaction forces without explicitly optimizing every joint. More computationally intensive implementations can employ nonlinear dynamics or full-body models when sufficient processing capability and solver performance are available.
+
+Contact scheduling provides MPC with information about which feet are expected to support the robot during each part of the prediction horizon. For a trot, for example, diagonal pairs of legs alternate between stance and swing. Contact schedules may be predefined by a gait generator, continuously adjusted by a supervisory controller, or incorporated as optimization variables in more advanced formulations.
+
+During stance, MPC determines ground reaction forces that generate the required linear and angular accelerations of the robot body. These forces must obey physical constraints. A foot cannot pull on ordinary ground, normal forces must remain nonnegative, tangential forces must remain compatible with available friction, and actuator or structural limitations may restrict the magnitude and direction of realizable forces.
+
+Friction constraints are commonly represented through a friction cone or a computationally convenient friction pyramid. These constraints prevent the optimizer from requesting contact forces that would cause the foot to slip. When friction is uncertain, conservative coefficients or adaptive estimates may be employed. Terrain-dependent friction therefore becomes an important connection between perception, estimation, planning, and model-based control.
+
+At each control cycle, MPC calculates an optimized sequence of future states and control actions, but normally only the first portion of the solution is applied. The prediction horizon then moves forward, new measurements are incorporated, and the optimization is solved again. This receding-horizon principle enables continuous feedback correction while preserving the ability to anticipate upcoming contact transitions and terrain conditions.
+
+MPC outputs can include desired ground reaction forces, center-of-mass acceleration, body wrench, momentum trajectory, or optimized body states. These quantities describe what the robot should achieve dynamically, but they do not necessarily specify how every joint should move. This is the point at which Whole-Body Control becomes responsible for translating reduced-order objectives into physically executable full-body behavior.
+
+WBC uses the robot\'s multibody equations of motion, including mass distribution, joint configuration, Coriolis effects, gravity, actuator torques, and external contact forces. A typical formulation relates generalized acceleration, actuation, and contact forces through rigid-body dynamics. Contact Jacobians additionally describe how joint and body motion influence the position and velocity of feet interacting with the environment.
+
+The controller simultaneously considers several tasks. The trunk may need to track a desired orientation, the center of mass must follow the reference motion, stance feet should remain stationary relative to the ground, and swing feet must follow planned trajectories toward future footholds. Joint posture objectives can keep the configuration away from singularities, mechanical limits, or geometrically undesirable poses.
+
+Because these objectives can conflict, WBC commonly employs optimization-based formulations such as Quadratic Programming (QP). High-priority physical constraints are imposed explicitly, while tracking objectives are represented through weighted costs or hierarchical tasks. The optimizer then finds generalized accelerations, contact forces, and actuator torques that best satisfy the desired behavior without violating the robot\'s physical limitations.
+
+The interface between MPC and WBC must be designed carefully. If MPC predicts forces using assumptions that differ substantially from the full robot dynamics, WBC may be unable to reproduce them accurately. Consistent coordinate frames, mass properties, contact definitions, timing, and actuator limits are therefore essential. Model mismatch at this interface can produce tracking error, oscillation, or unnecessary control effort.
+
+Swing-leg control operates alongside stance-force regulation. Once a leg leaves the ground, it no longer contributes a supporting contact force and must be moved toward the next foothold. Swing trajectories are typically designed with sufficient ground clearance and smooth velocity profiles. Near touchdown, the trajectory may reduce vertical velocity to limit impact while preparing the leg for rapid transition into force-bearing stance.
+
+Contact transitions represent one of the most sensitive parts of model-based locomotion. The mathematical model may assume that contact begins at a specific instant, while the physical foot can touch earlier or later because of terrain estimation errors. Robust implementations therefore use contact detection, compliant control, transition logic, or force ramping to avoid abrupt changes in commanded forces and joint torques.
+
+Joint torque commands generated by WBC are passed to the low-level actuator controllers. High-performance quadrupeds commonly employ torque or impedance control because these approaches permit dynamic interaction with the environment. Impedance control can combine desired joint motion with compliant response, allowing small terrain errors and impact disturbances to be absorbed without forcing the high-level optimization to model every local interaction.
+
+The MPC and WBC loops usually operate at different frequencies. MPC involves prediction and numerical optimization and may execute at tens to hundreds of hertz depending on model complexity and hardware. WBC generally runs faster because it must respond to rapidly changing joint and contact states. Motor current or torque regulation executes at an even higher frequency inside the actuator or embedded control system.
+
+State estimation latency strongly affects the entire stack. MPC predictions initialized from delayed body states can produce forces appropriate for a state the robot no longer occupies, while WBC may attempt to compensate using inconsistent measurements. Accurate timestamps, sensor synchronization, low-latency communication, and prediction of delayed states are therefore practical requirements rather than merely implementation details.
+
+External disturbances demonstrate the hierarchical behavior of the architecture. If the robot is pushed, fast actuator and impedance loops initially react to the physical deviation. WBC can rapidly redistribute contact forces and modify whole-body acceleration, while the next MPC iterations redesign the future force and body trajectory. If necessary, the gait or foothold planner can subsequently alter the contact sequence.
+
+Model accuracy is important but perfect modeling is neither possible nor required. Payload variation, joint friction, structural compliance, actuator dynamics, ground deformation, and uncertain contact friction introduce discrepancies between predicted and actual motion. Feedback optimization repeatedly corrects these errors, while disturbance observers, adaptive parameters, robust MPC, or learned residual models can further improve performance.
+
+Terrain-aware MPC extends the architecture by incorporating local surface geometry into prediction. Body trajectories and contact forces can then be optimized with respect to slopes, stairs, uneven surfaces, or constrained foothold regions. In more advanced systems, foothold selection and contact timing can also become part of the optimization, increasing adaptability while substantially increasing computational complexity.
+
+The architecture can also incorporate learning without abandoning its model-based foundation. Neural networks may estimate friction, predict disturbances, approximate computationally expensive dynamics, tune MPC costs, or provide residual corrections. Learned components can therefore compensate for difficult-to-model effects while MPC and WBC retain explicit physical constraints and interpretable relationships between forces and motion.
+
+Safety constraints can be embedded directly within both optimization layers. MPC may limit body inclination, predicted contact forces, velocity, or stability margins, while WBC enforces joint position, velocity, torque, and contact constraints. An independent supervisory controller should nevertheless monitor solver status, state-estimation confidence, communication integrity, actuator health, and abnormal body motion.
+
+Optimization failure must be treated as a normal engineering possibility rather than an impossible event. A solver may exceed its computation deadline, encounter infeasible constraints, or receive invalid state information. Practical controllers therefore maintain fallback commands, previous feasible solutions, conservative standing behaviors, or controlled-stop modes so that numerical failure does not immediately become physical instability.
+
+Computational determinism is especially important because a theoretically superior optimization method can perform poorly if its execution time varies unpredictably. The useful controller is one that produces sufficiently good solutions within every required deadline. Warm starting, sparse numerical methods, model simplification, horizon selection, solver tuning, and dedicated real-time computation are therefore integral parts of locomotion architecture design.
+
+The MPC-WBC stack ultimately forms a hierarchical feedback system connecting prediction to physical execution. MPC answers how the robot should distribute motion and forces over the near future, WBC determines how the complete articulated body should realize the current portion of that plan, and low-level controllers produce the actuator behavior required to interact with the real environment.
+
+For quadruped Physical AI, this architecture provides an important bridge between intelligent planning and dynamically reliable embodiment. Higher-level AI can select destinations, behaviors, terrain strategies, or manipulation objectives without directly solving high-frequency rigid-body dynamics. The model-based locomotion stack transforms those intentions into constrained, continuously corrected physical actions while returning state and interaction information upward.
+
+A robust MPC-WBC architecture therefore depends not only on sophisticated optimization algorithms but also on consistent models, reliable estimation, contact-aware planning, deterministic computation, actuator bandwidth, and carefully designed interfaces. When these components operate as a coordinated hierarchy, quadruped robots can achieve stable, agile, and adaptable locomotion while maintaining explicit control over the physical constraints governing real-world motion.
+
+모델 기반 이동(Model-Based Locomotion)은 로봇 동역학(Robot Dynamics)의 명시적인 수학적 표현을 사용하여 물리적 제약조건을 만족하는 움직임과 힘을 결정한다. 사족보행 로봇(Quadruped Robot)에서는 모델 예측 제어(Model Predictive Control, MPC)와 전신 제어(Whole-Body Control, WBC)를 결합한 아키텍처가 널리 사용된다. MPC는 미래의 몸체 움직임과 접촉력을 예측하고, WBC는 이러한 목표를 동역학적으로 일관된 관절 수준 명령(Joint-Level Command)으로 변환한다.
+
+이 아키텍처의 근본적인 장점은 예측 기반 이동 최적화(Predictive Motion Optimization)와 세부적인 전신 동작 구현(Whole-Body Realization)을 분리한다는 점이다. 모든 관절, 액추에이터, 접촉 및 지형 상호작용을 긴 예측 구간에서 직접 최적화하면 계산량이 매우 커질 수 있다. 따라서 MPC는 일반적으로 축소 차수 동역학 모델(Reduced-Order Dynamic Model)을 사용하고, WBC는 보다 완전한 다물체 모델(Multibody Model)을 사용하여 순간적인 운동학적·동역학적 일관성을 보장한다.
+
+제어 과정은 몸체 위치, 자세, 선속도와 각속도, 관절 상태 및 추정된 접촉 상태를 포함하는 로봇 상태 추정(Robot State Estimation)에서 시작된다. 상위 수준의 내비게이션 또는 이동 모듈에서 목표 속도, 진행 방향, 몸체 높이 또는 궤적 명령을 제공한다. 지형 인지(Terrain Perception)는 추가적으로 표면 형상, 후보 발 디딤 위치(Foothold Candidate), 마찰 추정값 및 신뢰할 수 있는 접촉이 가능한 위치를 나타내는 제약조건을 제공할 수 있다.
+
+기준 생성기(Reference Generator)는 이러한 입력을 목표 몸체 및 접촉 궤적(Desired Body and Contact Trajectory)으로 변환한다. 질량 중심(Center of Mass)의 움직임, 몸통 자세(Trunk Orientation), 목표 속도, 보행 위상(Gait Phase), 기준 발 디딤 위치(Nominal Foothold Location) 등을 지정할 수 있다. 이러한 기준값은 절대적인 명령이라기보다 목표값으로 사용되며, 동역학적 실행 가능성, 접촉 제한 또는 외란으로 인해 기준 궤적이 적절하지 않을 경우 MPC가 미래의 움직임을 수정할 수 있는 충분한 자유도를 유지하도록 한다.
+
+MPC는 유한 예측 구간 최적 제어 문제(Finite-Horizon Optimal Control Problem)를 반복적으로 해결한다. 현재 추정된 상태에서 시작하여 미래의 여러 시간 단계에 걸쳐 로봇 상태가 어떻게 변화할지를 예측한다. 목적 함수(Objective Function)는 목표 몸체 위치, 속도, 자세, 운동량(Momentum) 또는 기타 기준값과의 편차를 최소화하면서 과도한 제어 입력과 불필요한 접촉력 변화를 억제하도록 구성된다.
+
+예측 모델(Prediction Model)의 선택은 아키텍처에서 매우 중요한 요소이다. 많은 사족보행 제어기는 모든 관절을 명시적으로 최적화하지 않으면서도 몸체 움직임과 지면 반력(Ground Reaction Force)의 핵심 관계를 표현할 수 있기 때문에 질량 중심 동역학(Centroidal Dynamics) 또는 단순화된 강체 동역학(Simplified Rigid-Body Dynamics)을 사용한다. 충분한 연산 성능과 솔버(Solver) 성능을 확보할 수 있다면 비선형 동역학(Nonlinear Dynamics)이나 전신 모델(Full-Body Model)을 사용하는 더욱 복잡한 구현도 가능하다.
+
+접촉 스케줄링(Contact Scheduling)은 예측 구간의 각 시점에서 어떤 발이 로봇을 지지할 것인지에 대한 정보를 MPC에 제공한다. 예를 들어 트로트(Trot)에서는 대각선 방향의 두 다리가 한 쌍을 이루어 지지 상태(Stance)와 스윙 상태(Swing)를 교대로 전환한다. 접촉 스케줄은 보행 생성기(Gait Generator)에 의해 미리 정의되거나, 상위 감독 제어기(Supervisory Controller)에 의해 지속적으로 조정되거나, 더욱 발전된 구조에서는 최적화 변수(Optimization Variable) 자체로 포함될 수 있다.
+
+지지 상태에서 MPC는 로봇 몸체에 필요한 선형 및 각가속도를 발생시키는 지면 반력을 결정한다. 이러한 힘은 물리적 제약조건을 만족해야 한다. 일반적인 지면에서 발은 지면을 당기는 힘을 발생시킬 수 없으므로 수직력(Normal Force)은 음수가 될 수 없으며, 접선력(Tangential Force)은 사용 가능한 마찰 범위 안에 있어야 한다. 또한 액추에이터 또는 구조적 한계에 따라 실제 구현 가능한 힘의 크기와 방향이 제한될 수 있다.
+
+마찰 제약(Friction Constraint)은 일반적으로 마찰 원뿔(Friction Cone) 또는 계산상 보다 편리한 마찰 피라미드(Friction Pyramid)를 이용하여 표현한다. 이러한 제약은 최적화기가 발의 미끄러짐을 유발하는 접촉력을 요구하지 못하도록 한다. 마찰 특성이 불확실한 경우에는 보수적인 마찰 계수 또는 적응형 추정값(Adaptive Estimate)을 사용할 수 있다. 따라서 지형에 따른 마찰 특성은 인지, 상태 추정, 계획 및 모델 기반 제어를 연결하는 중요한 요소가 된다.
+
+각 제어 주기마다 MPC는 미래 상태와 제어 입력의 최적화된 시퀀스를 계산하지만 일반적으로 계산된 해의 첫 번째 부분만 실제 시스템에 적용한다. 이후 예측 구간(Prediction Horizon)을 앞으로 이동시키고 새로운 측정값을 반영하여 최적화 문제를 다시 해결한다. 이러한 이동 예측 구간 원리(Receding-Horizon Principle)는 지속적인 피드백 보정을 가능하게 하면서 앞으로 발생할 접촉 전환과 지형 조건을 미리 고려할 수 있도록 한다.
+
+MPC의 출력에는 목표 지면 반력, 질량 중심 가속도, 몸체 렌치(Body Wrench), 운동량 궤적(Momentum Trajectory) 또는 최적화된 몸체 상태가 포함될 수 있다. 이러한 값들은 로봇이 동역학적으로 무엇을 달성해야 하는지를 나타내지만 모든 관절이 어떻게 움직여야 하는지까지 반드시 지정하지는 않는다. 이 지점부터 전신 제어(WBC)가 축소 차수 수준의 목표를 물리적으로 실행 가능한 전신 동작으로 변환하는 역할을 담당한다.
+
+WBC는 질량 분포, 관절 구성, 코리올리 효과(Coriolis Effect), 중력, 액추에이터 토크 및 외부 접촉력을 포함하는 로봇의 다물체 운동 방정식(Multibody Equations of Motion)을 사용한다. 일반적인 수식에서는 강체 동역학(Rigid-Body Dynamics)을 통해 일반화 가속도(Generalized Acceleration), 구동 입력 및 접촉력의 관계를 표현한다. 또한 접촉 자코비안(Contact Jacobian)은 관절과 몸체의 움직임이 환경과 접촉하는 발의 위치와 속도에 어떤 영향을 미치는지를 나타낸다.
+
+제어기는 여러 작업(Task)을 동시에 고려한다. 몸통은 목표 자세를 추종해야 하고, 질량 중심은 기준 움직임을 따라야 하며, 지지 상태의 발은 지면에 대해 정지된 상태를 유지해야 하고, 스윙 상태의 발은 다음 발 디딤 위치를 향해 계획된 궤적을 따라야 한다. 관절 자세 목표(Joint Posture Objective)를 추가하여 로봇의 구성이 특이점(Singularity), 기계적 한계 또는 기하학적으로 불리한 자세에 접근하지 않도록 할 수도 있다.
+
+이러한 목표들은 서로 충돌할 수 있기 때문에 WBC는 일반적으로 이차 계획법(Quadratic Programming, QP)과 같은 최적화 기반 구조를 사용한다. 높은 우선순위의 물리적 제약은 명시적인 제약조건으로 적용하고, 추종 목표는 가중 비용 함수(Weighted Cost) 또는 계층적 작업(Hierarchical Task)으로 표현한다. 이후 최적화기는 로봇의 물리적 한계를 위반하지 않으면서 원하는 동작을 최대한 만족하는 일반화 가속도, 접촉력 및 액추에이터 토크를 계산한다.
+
+MPC와 WBC 사이의 인터페이스는 신중하게 설계해야 한다. MPC가 전신 로봇 동역학과 크게 다른 가정을 기반으로 힘을 예측하면 WBC가 해당 힘을 정확하게 구현하지 못할 수 있다. 따라서 일관된 좌표계(Coordinate Frame), 질량 특성(Mass Property), 접촉 정의, 시간 정보 및 액추에이터 한계가 필수적이다. 이 인터페이스에서 발생하는 모델 불일치(Model Mismatch)는 추종 오차, 진동 또는 불필요한 제어 에너지를 발생시킬 수 있다.
+
+스윙 다리 제어(Swing-Leg Control)는 지지력 제어(Stance-Force Regulation)와 동시에 수행된다. 다리가 지면에서 떨어지면 더 이상 지지 접촉력을 제공하지 않으며 다음 발 디딤 위치를 향해 이동해야 한다. 스윙 궤적은 일반적으로 충분한 지면 여유(Ground Clearance)와 부드러운 속도 프로파일을 갖도록 설계된다. 착지 직전에는 충격을 줄이면서 다리가 빠르게 지지력을 발생시키는 상태로 전환될 수 있도록 수직 속도를 감소시킬 수 있다.
+
+접촉 전환(Contact Transition)은 모델 기반 이동에서 가장 민감한 과정 중 하나이다. 수학적 모델은 특정 시점에 접촉이 시작된다고 가정할 수 있지만 실제 발은 지형 추정 오차로 인해 예상보다 일찍 또는 늦게 지면에 닿을 수 있다. 따라서 강건한 구현에서는 접촉 감지(Contact Detection), 순응 제어(Compliant Control), 전환 로직(Transition Logic) 또는 힘 램핑(Force Ramping)을 사용하여 명령 접촉력과 관절 토크가 갑작스럽게 변화하는 것을 방지한다.
+
+WBC가 생성한 관절 토크 명령은 하위 수준 액추에이터 제어기(Low-Level Actuator Controller)로 전달된다. 고성능 사족보행 로봇에서는 환경과의 동적인 상호작용을 허용하기 위해 토크 제어 또는 임피던스 제어(Impedance Control)가 일반적으로 사용된다. 임피던스 제어는 목표 관절 움직임과 순응적인 반응을 결합하여 상위 수준 최적화에서 모든 지역적 상호작용을 직접 모델링하지 않더라도 작은 지형 오차와 충격 외란을 흡수할 수 있도록 한다.
+
+MPC와 WBC 제어 루프(Control Loop)는 일반적으로 서로 다른 주파수로 동작한다. MPC는 미래 예측과 수치 최적화(Numerical Optimization)를 포함하기 때문에 모델 복잡도와 하드웨어 성능에 따라 수십에서 수백 헤르츠(Hz) 수준으로 실행될 수 있다. WBC는 빠르게 변화하는 관절과 접촉 상태에 대응해야 하므로 일반적으로 더 높은 주파수로 실행된다. 모터 전류 또는 토크 제어는 액추에이터나 임베디드 제어 시스템(Embedded Control System) 내부에서 더욱 높은 주파수로 수행된다.
+
+상태 추정 지연(State Estimation Latency)은 전체 스택의 성능에 큰 영향을 미친다. 지연된 몸체 상태를 초기 조건으로 사용하는 MPC는 로봇이 이미 벗어난 과거 상태에 적합한 힘을 계산할 수 있으며, WBC는 서로 일치하지 않는 측정값을 사용하여 이를 보상하려 할 수 있다. 따라서 정확한 타임스탬프(Timestamp), 센서 동기화(Sensor Synchronization), 저지연 통신(Low-Latency Communication), 지연 상태 예측(Delayed-State Prediction)은 단순한 구현 세부사항이 아니라 실제 시스템의 핵심 요구조건이다.
+
+외부 외란(External Disturbance)은 이 아키텍처의 계층적 동작을 잘 보여준다. 로봇이 외부에서 밀리는 경우 빠른 액추에이터 및 임피던스 제어 루프가 먼저 물리적 편차에 반응한다. WBC는 접촉력을 신속하게 재분배하고 전신 가속도를 수정할 수 있으며, 이후 MPC 반복 계산에서는 미래의 접촉력과 몸체 궤적을 다시 설계한다. 필요한 경우 보행 또는 발 디딤 계획기가 이후의 접촉 순서까지 변경할 수 있다.
+
+모델의 정확성은 중요하지만 완벽한 모델링은 가능하지도 않고 반드시 필요한 것도 아니다. 탑재 하중 변화, 관절 마찰, 구조적 순응성(Structural Compliance), 액추에이터 동역학, 지면 변형 및 불확실한 접촉 마찰은 예측된 움직임과 실제 움직임 사이에 차이를 발생시킨다. 피드백 최적화(Feedback Optimization)는 이러한 오차를 반복적으로 보정하며, 외란 관측기(Disturbance Observer), 적응형 파라미터, 강건 MPC(Robust MPC) 또는 학습 기반 잔차 모델(Learned Residual Model)을 통해 성능을 추가적으로 향상시킬 수 있다.
+
+지형 인지형 MPC(Terrain-Aware MPC)는 지역 표면 형상을 예측 과정에 포함하여 아키텍처를 확장한다. 이를 통해 경사면, 계단, 불규칙 지형 또는 제한된 발 디딤 영역을 고려하여 몸체 궤적과 접촉력을 최적화할 수 있다. 더욱 발전된 시스템에서는 발 디딤 위치 선택과 접촉 시점(Contact Timing)도 최적화 변수에 포함할 수 있으며, 이는 적응성을 크게 향상시키는 대신 계산 복잡도를 상당히 증가시킨다.
+
+이 아키텍처는 모델 기반 구조를 유지하면서 학습(Learning)을 통합할 수도 있다. 신경망(Neural Network)은 마찰을 추정하거나, 외란을 예측하거나, 계산 비용이 높은 동역학을 근사하거나, MPC 비용 함수의 가중치를 조정하거나, 잔차 보정(Residual Correction)을 제공하는 데 사용될 수 있다. 따라서 학습 기반 구성요소는 모델링하기 어려운 효과를 보완하고, MPC와 WBC는 명시적인 물리적 제약과 힘-운동 사이의 해석 가능한 관계를 유지할 수 있다.
+
+안전 제약(Safety Constraint)은 두 최적화 계층 모두에 직접 포함될 수 있다. MPC는 몸체 기울기, 예측 접촉력, 속도 또는 안정성 여유(Stability Margin)를 제한할 수 있으며, WBC는 관절 위치, 속도, 토크 및 접촉 제약을 적용할 수 있다. 그럼에도 독립적인 감독 제어기(Supervisory Controller)는 솔버 상태, 상태 추정 신뢰도, 통신 무결성, 액추에이터 상태 및 비정상적인 몸체 움직임을 별도로 감시해야 한다.
+
+최적화 실패(Optimization Failure)는 발생할 수 없는 사건이 아니라 정상적인 공학적 가능성으로 취급해야 한다. 솔버가 계산 마감시간을 초과하거나, 실행 불가능한 제약조건(Infeasible Constraint)을 만나거나, 잘못된 상태 정보를 입력받을 수 있다. 따라서 실제 제어기에서는 수치 계산 실패가 즉시 물리적 불안정으로 이어지지 않도록 대체 명령(Fallback Command), 이전에 계산된 실행 가능한 해, 보수적인 정지 자세 또는 제어 정지 모드(Controlled-Stop Mode)를 준비한다.
+
+계산 결정성(Computational Determinism) 역시 매우 중요하다. 이론적으로 우수한 최적화 방법이라도 실행 시간이 예측할 수 없게 변화하면 실제 시스템에서는 성능이 저하될 수 있다. 실용적인 제어기는 요구된 모든 계산 마감시간 내에서 충분히 좋은 해를 안정적으로 생성해야 한다. 따라서 웜 스타팅(Warm Starting), 희소 수치 계산(Sparse Numerical Method), 모델 단순화, 예측 구간 선택, 솔버 튜닝 및 전용 실시간 연산은 이동 아키텍처 설계의 핵심 요소이다.
+
+MPC-WBC 스택은 궁극적으로 미래 예측과 물리적 실행을 연결하는 계층적 피드백 시스템(Hierarchical Feedback System)을 형성한다. MPC는 가까운 미래에 로봇이 움직임과 힘을 어떻게 분배해야 하는지를 결정하고, WBC는 완전한 관절형 몸체(Articulated Body)가 현재 시점에서 해당 계획을 어떻게 구현할지를 결정하며, 하위 수준 제어기는 실제 환경과 상호작용하는 데 필요한 액추에이터 동작을 생성한다.
+
+사족보행 피지컬 AI(Quadruped Physical AI)에서 이러한 아키텍처는 지능형 계획(Intelligent Planning)과 동역학적으로 신뢰할 수 있는 체화(Dynamically Reliable Embodiment)를 연결하는 중요한 기반을 제공한다. 상위 수준 AI는 고주파 강체 동역학 문제를 직접 해결하지 않고도 목적지, 행동, 지형 대응 전략 또는 조작 목표를 선택할 수 있다. 모델 기반 이동 스택은 이러한 의도를 제약조건을 만족하고 지속적으로 보정되는 물리적 행동으로 변환하면서 상태와 상호작용 정보를 다시 상위 계층으로 전달한다.
+
+강건한 MPC-WBC 아키텍처는 정교한 최적화 알고리즘만으로 완성되는 것이 아니라 일관된 모델, 신뢰할 수 있는 상태 추정, 접촉 인지형 계획(Contact-Aware Planning), 결정론적 연산, 충분한 액추에이터 대역폭(Actuator Bandwidth), 세심하게 설계된 인터페이스에 의존한다. 이러한 구성요소가 하나의 조정된 계층 구조로 동작할 때 사족보행 로봇은 실제 환경의 물리적 제약을 명시적으로 관리하면서 안정적이고 민첩하며 적응적인 이동을 수행할 수 있다.
+
+##  
+
+## 02.03. Learning Based Locomotion RL Policy Stack [w/Code]
+
+![](images/image3.png){width="7.268055555555556in" height="7.268055555555556in"}
+
+Learning-based locomotion replaces selected manually designed control relationships with policies learned from interaction data. Reinforcement Learning (RL) is particularly effective for quadruped locomotion because a policy can learn nonlinear relationships among body motion, joint configuration, contact events, terrain conditions, and actuator commands without requiring every interaction to be represented analytically.
+
+An RL locomotion stack remains a hierarchical control architecture rather than a single neural network directly controlling the entire robot. High-level navigation provides desired velocity, heading, or trajectory commands, while state estimation describes the current robot configuration and motion. A learned locomotion policy transforms these observations and commands into actions that are subsequently executed through lower-level actuator controllers.
+
+The policy observation vector defines what information is available for decision making. Typical proprioceptive observations include body angular velocity, gravity direction, joint positions, joint velocities, previous actions, and commanded motion. Depending on the application, linear velocity, contact estimates, actuator states, terrain information, or temporal histories may also be included to provide richer information about the robot\'s physical state.
+
+Proprioception is especially important because it allows locomotion to remain functional even when external perception becomes unreliable. Joint encoders and inertial measurements provide high-rate information about body and leg motion, while estimated contact states indicate interactions with the ground. Policies trained with sufficiently diverse disturbances can infer useful latent properties of terrain and dynamics from these internal measurements.
+
+Exteroceptive locomotion extends the observation space using cameras, depth sensors, or LiDAR. Terrain height samples, elevation maps, depth images, point clouds, or learned terrain embeddings can inform the policy about upcoming obstacles before physical contact occurs. This enables anticipatory behaviors such as lifting a foot over an obstacle, adapting body height, or selecting safer stepping patterns.
+
+Raw high-dimensional perception is often processed by a dedicated encoder before being provided to the locomotion policy. Convolutional networks, multilayer perceptrons, transformers, or other representation models can compress terrain observations into compact latent vectors. Separating perception encoding from action generation can reduce policy complexity and allow perception components to be trained or updated independently.
+
+The policy network maps observations and task commands to an action representation. Actions may correspond to desired joint positions, joint position offsets, desired velocities, torques, impedance parameters, foot positions, or higher-level locomotion targets. The selected action space strongly influences learning difficulty, control bandwidth, physical interpretability, and the amount of responsibility assigned to low-level controllers.
+
+Desired joint positions combined with proportional-derivative or impedance control are widely used because they provide a useful interface between learned behavior and physical actuation. The policy generates moderate-frequency joint targets while a faster embedded controller tracks those targets and reacts to local disturbances. This structure prevents the neural policy from having to reproduce the fastest actuator dynamics directly.
+
+Direct torque policies provide greater control authority but generally require more accurate simulation and careful training. Small errors in torque commands can immediately influence contact stability, and differences between simulated and physical actuator dynamics can become significant. Torque-level learning therefore places greater importance on actuator modeling, latency simulation, safety constraints, and sim-to-real robustness.
+
+Training is commonly performed in simulation because reinforcement learning may require millions or billions of interaction steps. Large numbers of simulated robots can operate in parallel, allowing policies to experience falls, collisions, extreme disturbances, and unusual terrain without damaging physical hardware. GPU-accelerated simulation has made this massively parallel training approach practical for modern quadruped locomotion.
+
+The reward function defines the behaviors encouraged during training. A locomotion reward may encourage velocity tracking, desired orientation, stable body height, appropriate foot clearance, smooth motion, and energy efficiency. Penalties can discourage excessive torque, joint acceleration, foot slipping, collisions, unstable contact, or abrupt actions. Reward design therefore acts as an implicit specification of desired locomotion behavior.
+
+Poorly designed rewards can produce behaviors that maximize numerical return while violating the designer\'s actual intention. A robot may exploit simulator assumptions, adopt energetically undesirable motion, or discover unnatural contact patterns. Reward terms must therefore be evaluated together with physical constraints and qualitative behavior rather than judged solely by the accumulated reward value.
+
+Curriculum learning gradually increases task difficulty as the policy improves. Training may begin on flat terrain with moderate velocity commands and later introduce slopes, stairs, obstacles, reduced friction, stronger disturbances, or faster motion. This progression helps the policy acquire fundamental balance and gait behavior before solving difficult combinations of locomotion challenges.
+
+Domain randomization is a central technique for transferring policies from simulation to real hardware. During training, parameters such as robot mass, center of mass, joint friction, motor strength, control delay, sensor noise, ground friction, and terrain geometry are randomly varied. The policy is therefore discouraged from depending on one exact simulated model and learns behavior that remains effective across a distribution of dynamics.
+
+Actuator modeling deserves particular attention because simulated ideal motors differ substantially from physical actuators. Real systems exhibit torque limits, bandwidth restrictions, communication delay, friction, saturation, thermal effects, and nonlinear responses. Learned actuator models or experimentally identified motor models can be incorporated into simulation so that the policy experiences more realistic relationships between commands and resulting motion.
+
+Latency randomization similarly improves robustness to real-time implementation effects. Observation delays, command delays, sensor sampling differences, and communication jitter can alter closed-loop behavior. Training the policy under randomized delay conditions reduces sensitivity to a single ideal timing assumption and can significantly improve deployment reliability on embedded computing platforms.
+
+Privileged learning allows information available only during simulation to improve training without requiring that information during deployment. A teacher policy may observe exact terrain geometry, contact forces, friction coefficients, or disturbance parameters, while a student policy receives only realistic onboard observations. Distillation or asymmetric actor-critic methods can transfer useful behavior from privileged simulation knowledge into deployable policies.
+
+Adaptation mechanisms can further address changes that were not explicitly represented by instantaneous observations. Recurrent networks or temporal encoders can process histories of states and actions to infer latent properties such as payload, friction, actuator weakness, or terrain compliance. The resulting internal representation allows locomotion behavior to change according to the estimated dynamics of the current environment.
+
+Policy execution must satisfy strict real-time requirements. At each control step, sensor measurements are collected, observations are normalized, the neural network performs inference, actions are postprocessed, and commands are transmitted to actuator controllers. Although inference is usually cheaper than online trajectory optimization, unpredictable computation or communication delays can still destabilize high-performance locomotion.
+
+Observation normalization is an important but easily overlooked component of deployment. Neural networks are sensitive to the statistical scale of their inputs, so the normalization parameters used during training must be reproduced correctly on the physical robot. Incorrect units, coordinate conventions, scaling factors, or clipping ranges can cause severe policy degradation even when the network weights themselves are correct.
+
+Coordinate-frame consistency is equally critical. Body velocity, gravity vectors, terrain measurements, and command directions may be expressed in world, body, or heading-aligned frames. A mismatch between training and deployment frames can generate systematically incorrect actions. The policy interface must therefore define each observation and action variable with the same precision expected from a conventional model-based controller.
+
+Safety layers are commonly placed around learned policies because neural networks do not inherently guarantee constraint satisfaction. Joint commands can be clipped to mechanical ranges, torque and velocity limits can be enforced, and abnormal body orientation can trigger recovery or shutdown behavior. Independent monitoring can detect invalid observations, policy divergence, excessive contact forces, communication failures, or actuator faults.
+
+Recovery policies may be separated from normal locomotion policies. When the robot experiences a large disturbance or falls into a configuration outside the nominal locomotion distribution, a dedicated recovery controller can attempt to regain a standing posture. A supervisory state machine then selects between standing, locomotion, recovery, controlled stopping, and other operating modes according to robot condition.
+
+Learning-based locomotion does not eliminate gait structure, even when gait timing is not explicitly programmed. Policies frequently discover periodic contact patterns resembling trot, walk, bound, or other recognizable gaits because these patterns are dynamically efficient solutions. Some architectures nevertheless provide gait phase or contact schedules explicitly to improve controllability, predictability, and transitions between behaviors.
+
+Command-conditioned policies can represent many locomotion behaviors within one network. Desired forward velocity, lateral velocity, yaw rate, body height, or gait parameters can be included in the observation vector. The same policy can then generate different motions according to command inputs, reducing the need for separate controllers and enabling continuous transitions across a broad locomotion envelope.
+
+Terrain-conditioned policies extend this concept by adapting behavior to environmental geometry. On flat ground the robot may use efficient low-clearance steps, while rough terrain may produce higher foot trajectories and more conservative body motion. Slopes, stairs, gaps, and irregular footholds can produce different contact strategies when the policy has been trained with sufficiently representative terrain distributions.
+
+Hybrid model-based and learning-based stacks can improve reliability and flexibility. An RL policy may generate footholds, gait parameters, residual forces, or joint corrections while MPC or WBC maintains explicit dynamic constraints. Alternatively, model-based controllers can generate nominal behavior and a learned residual policy can compensate for modeling errors that are difficult to identify analytically.
+
+Residual learning is particularly attractive when a reliable conventional controller already exists. Instead of learning locomotion from the beginning, the policy learns corrections to nominal model-based commands. This reduces the action space that must be learned and provides a meaningful fallback behavior when the learned correction is limited, disabled, or considered unreliable by the supervisory system.
+
+Evaluation must extend beyond average reward or successful walking demonstrations. Policies should be tested across velocity ranges, terrain types, friction conditions, payload changes, external pushes, sensor noise, latency variations, and actuator degradation. Repeated trials and controlled perturbations are necessary to determine whether observed robustness reflects genuine generalization rather than favorable test conditions.
+
+Sim-to-real validation should proceed incrementally. Initial experiments can use restrained or low-speed operation before expanding toward dynamic motion and difficult terrain. Logs of observations, actions, joint states, estimated contacts, motor currents, and body motion should be compared with simulation to identify systematic differences and guide improvements to the training environment.
+
+For Physical AI, an RL locomotion policy functions as an adaptive execution layer between high-level intelligence and physical interaction. Task-level systems determine where and why the robot should move, while the learned policy determines how the articulated body should continuously react to commands, terrain, contacts, and disturbances. Feedback from execution can subsequently influence navigation and higher-level reasoning.
+
+A robust RL policy stack therefore depends on much more than the neural network itself. Simulation quality, observation design, action representation, reward construction, domain randomization, actuator modeling, timing, safety supervision, and validation collectively determine real-world performance. When these components are engineered as an integrated system, learning-based locomotion can provide agile and highly adaptive behavior across complex physical environments.
+
+학습 기반 이동(Learning-Based Locomotion)은 사람이 직접 설계한 일부 제어 관계를 상호작용 데이터로부터 학습된 정책(Policy)으로 대체한다. 강화학습(Reinforcement Learning, RL)은 정책이 모든 상호작용을 해석적 모델로 표현하지 않고도 몸체 움직임, 관절 구성, 접촉 이벤트, 지형 조건 및 액추에이터 명령 사이의 비선형 관계를 학습할 수 있기 때문에 사족보행 이동(Quadruped Locomotion)에 특히 효과적이다.
+
+강화학습 이동 스택(RL Locomotion Stack)은 하나의 신경망이 전체 로봇을 직접 제어하는 구조라기보다 여전히 계층형 제어 아키텍처(Hierarchical Control Architecture)로 구성된다. 상위 수준 내비게이션은 목표 속도, 진행 방향 또는 궤적 명령을 제공하고, 상태 추정(State Estimation)은 현재 로봇의 구성과 움직임을 표현한다. 학습된 이동 정책(Learned Locomotion Policy)은 이러한 관측값과 명령을 행동(Action)으로 변환하고, 이후 하위 수준 액추에이터 제어기가 이를 실행한다.
+
+정책 관측 벡터(Policy Observation Vector)는 의사결정에 사용할 수 있는 정보를 정의한다. 일반적인 고유수용성 관측(Proprioceptive Observation)에는 몸체 각속도, 중력 방향, 관절 위치, 관절 속도, 이전 행동 및 이동 명령이 포함된다. 응용 분야에 따라 선속도, 접촉 추정값, 액추에이터 상태, 지형 정보 또는 시간 이력(Temporal History)을 추가하여 로봇의 물리 상태에 대한 더욱 풍부한 정보를 제공할 수 있다.
+
+고유수용감각(Proprioception)은 외부 환경 인지가 불안정해지더라도 이동 기능을 유지할 수 있도록 하기 때문에 특히 중요하다. 관절 인코더(Joint Encoder)와 관성 측정값(Inertial Measurement)은 몸체와 다리 움직임에 대한 고주파 정보를 제공하며, 추정된 접촉 상태는 지면과의 상호작용을 나타낸다. 충분히 다양한 외란을 사용하여 학습된 정책은 이러한 내부 측정값으로부터 지형과 동역학의 유용한 잠재 특성(Latent Property)을 추론할 수 있다.
+
+외부수용성 이동(Exteroceptive Locomotion)은 카메라, 깊이 센서(Depth Sensor) 또는 라이다(LiDAR)를 이용하여 관측 공간(Observation Space)을 확장한다. 지형 높이 샘플, 고도 맵(Elevation Map), 깊이 영상, 포인트 클라우드(Point Cloud) 또는 학습된 지형 임베딩(Terrain Embedding)은 실제 접촉이 발생하기 전에 정책에 전방 장애물 정보를 제공할 수 있다. 이를 통해 장애물을 넘기 위한 발 들기, 몸체 높이 조절 또는 더욱 안전한 보행 패턴 선택과 같은 선제적 행동이 가능해진다.
+
+고차원의 원시 인지 데이터(Raw High-Dimensional Perception)는 이동 정책에 입력되기 전에 전용 인코더(Encoder)를 통해 처리되는 경우가 많다. 합성곱 신경망(Convolutional Network), 다층 퍼셉트론(Multilayer Perceptron), 트랜스포머(Transformer) 또는 기타 표현 모델(Representation Model)을 사용하여 지형 관측값을 압축된 잠재 벡터(Latent Vector)로 변환할 수 있다. 인지 인코딩과 행동 생성을 분리하면 정책의 복잡도를 낮추고 인지 구성요소를 독립적으로 학습하거나 갱신할 수 있다.
+
+정책 네트워크(Policy Network)는 관측값과 작업 명령(Task Command)을 행동 표현(Action Representation)으로 변환한다. 행동은 목표 관절 위치, 관절 위치 오프셋, 목표 속도, 토크, 임피던스 파라미터(Impedance Parameter), 발 위치 또는 상위 수준 이동 목표에 대응할 수 있다. 선택한 행동 공간(Action Space)은 학습 난이도, 제어 대역폭, 물리적 해석 가능성 및 하위 수준 제어기에 부여되는 역할의 크기에 큰 영향을 미친다.
+
+비례-미분 제어(Proportional-Derivative Control, PD Control) 또는 임피던스 제어(Impedance Control)와 결합된 목표 관절 위치는 학습된 행동과 물리적 구동 사이에 효과적인 인터페이스를 제공하기 때문에 널리 사용된다. 정책은 중간 주파수에서 관절 목표값을 생성하고, 더 빠른 임베디드 제어기(Embedded Controller)가 이를 추종하면서 국부적인 외란에 대응한다. 이 구조는 신경망 정책이 가장 빠른 액추에이터 동역학을 직접 재현해야 하는 부담을 줄인다.
+
+직접 토크 정책(Direct Torque Policy)은 더 큰 제어 권한을 제공하지만 일반적으로 더욱 정확한 시뮬레이션과 신중한 학습을 요구한다. 작은 토크 명령 오차도 접촉 안정성에 즉각적인 영향을 줄 수 있으며, 시뮬레이션 액추에이터와 실제 액추에이터의 동역학 차이가 크게 나타날 수 있다. 따라서 토크 수준 학습(Torque-Level Learning)은 액추에이터 모델링, 지연 시뮬레이션, 안전 제약 및 시뮬레이션-실환경 강건성(Sim-to-Real Robustness)을 더욱 중요하게 만든다.
+
+강화학습은 수백만에서 수십억 단계의 상호작용을 요구할 수 있기 때문에 학습은 일반적으로 시뮬레이션에서 수행된다. 많은 수의 시뮬레이션 로봇을 병렬로 실행하면 실제 하드웨어를 손상시키지 않고도 넘어짐, 충돌, 극심한 외란 및 비정상적인 지형을 경험하도록 할 수 있다. GPU 가속 시뮬레이션(GPU-Accelerated Simulation)은 이러한 대규모 병렬 학습(Massively Parallel Training)을 현대적인 사족보행 이동에서 실용적인 방법으로 만들었다.
+
+보상 함수(Reward Function)는 학습 과정에서 장려할 행동을 정의한다. 이동 보상은 속도 추종, 목표 자세, 안정적인 몸체 높이, 적절한 발 여유 높이(Foot Clearance), 부드러운 움직임 및 에너지 효율을 장려할 수 있다. 반대로 과도한 토크, 관절 가속도, 발 미끄러짐, 충돌, 불안정한 접촉 또는 급격한 행동에는 페널티(Penalty)를 부여할 수 있다. 따라서 보상 설계(Reward Design)는 원하는 이동 행동을 암묵적으로 정의하는 명세 역할을 한다.
+
+잘못 설계된 보상은 수치적인 보상값은 최대화하면서 설계자가 실제로 의도한 행동을 위반하는 결과를 만들 수 있다. 로봇은 시뮬레이터의 가정을 악용하거나, 에너지 측면에서 비효율적인 움직임을 선택하거나, 비자연적인 접촉 패턴을 발견할 수 있다. 따라서 보상 항목은 누적 보상값만으로 평가해서는 안 되며 물리적 제약과 행동의 정성적 특성을 함께 검토해야 한다.
+
+커리큘럼 학습(Curriculum Learning)은 정책의 성능이 향상됨에 따라 작업 난이도를 점진적으로 증가시킨다. 초기에는 평탄한 지형과 적당한 속도 명령에서 학습을 시작하고 이후 경사면, 계단, 장애물, 낮은 마찰, 강한 외란 또는 빠른 움직임을 추가할 수 있다. 이러한 단계적 진행을 통해 정책은 복잡한 이동 문제를 해결하기 전에 기본적인 균형 유지와 보행 행동을 먼저 습득할 수 있다.
+
+도메인 랜덤화(Domain Randomization)는 시뮬레이션에서 실제 하드웨어로 정책을 전이하기 위한 핵심 기법이다. 학습 과정에서 로봇 질량, 질량 중심, 관절 마찰, 모터 출력, 제어 지연, 센서 노이즈, 지면 마찰 및 지형 형상과 같은 파라미터를 무작위로 변화시킨다. 이를 통해 정책이 하나의 정확한 시뮬레이션 모델에 의존하지 않고 다양한 동역학 분포에서 유효한 행동을 학습하도록 한다.
+
+액추에이터 모델링(Actuator Modeling)은 시뮬레이션의 이상적인 모터와 실제 액추에이터 사이에 상당한 차이가 존재하기 때문에 특별한 주의가 필요하다. 실제 시스템에는 토크 제한, 대역폭 제한, 통신 지연, 마찰, 포화(Saturation), 열적 영향 및 비선형 응답이 존재한다. 학습된 액추에이터 모델 또는 실험적으로 식별된 모터 모델을 시뮬레이션에 포함하면 정책이 명령과 실제 움직임 사이의 보다 현실적인 관계를 경험할 수 있다.
+
+지연 랜덤화(Latency Randomization) 역시 실시간 구현 효과에 대한 강건성을 향상시킨다. 관측 지연, 명령 지연, 센서 샘플링 차이 및 통신 지터(Communication Jitter)는 폐루프 동작(Closed-Loop Behavior)을 변화시킬 수 있다. 무작위 지연 조건에서 정책을 학습하면 하나의 이상적인 시간 조건에 대한 민감도를 낮출 수 있으며 임베디드 컴퓨팅 플랫폼에서 실제 배치 신뢰성을 크게 향상시킬 수 있다.
+
+특권 정보 학습(Privileged Learning)은 실제 배치에서는 사용할 수 없는 정보를 시뮬레이션 학습 과정에서 활용한다. 교사 정책(Teacher Policy)은 정확한 지형 형상, 접촉력, 마찰 계수 또는 외란 파라미터를 관측할 수 있지만 학생 정책(Student Policy)은 실제 온보드 센서로 획득 가능한 관측값만 사용한다. 지식 증류(Distillation) 또는 비대칭 액터-크리틱(Asymmetric Actor-Critic)을 통해 특권 시뮬레이션 정보에서 얻은 유용한 행동을 실제 배치 가능한 정책으로 전달할 수 있다.
+
+적응 메커니즘(Adaptation Mechanism)은 순간적인 관측값만으로 명확하게 파악하기 어려운 변화에 추가적으로 대응할 수 있다. 순환 신경망(Recurrent Network) 또는 시간 인코더(Temporal Encoder)는 상태와 행동의 시간 이력을 처리하여 탑재 하중, 마찰, 액추에이터 성능 저하 또는 지형 순응성(Terrain Compliance)과 같은 잠재 특성을 추론할 수 있다. 이렇게 형성된 내부 표현은 현재 환경에서 추정된 동역학 특성에 따라 이동 행동을 변화시킬 수 있도록 한다.
+
+정책 실행(Policy Execution)은 엄격한 실시간 요구조건을 만족해야 한다. 각 제어 단계에서 센서 측정값을 수집하고, 관측값을 정규화(Normalization)하며, 신경망 추론(Inference)을 수행하고, 행동을 후처리한 후 액추에이터 제어기에 명령을 전달한다. 신경망 추론은 일반적으로 온라인 궤적 최적화보다 계산량이 작지만 예측할 수 없는 계산 또는 통신 지연은 여전히 고성능 이동을 불안정하게 만들 수 있다.
+
+관측값 정규화(Observation Normalization)는 중요하지만 실제 배치 과정에서 쉽게 간과되는 요소이다. 신경망은 입력값의 통계적 크기에 민감하므로 학습 과정에서 사용한 정규화 파라미터를 실제 로봇에서도 정확하게 재현해야 한다. 네트워크 가중치 자체가 정확하더라도 단위, 좌표계 규칙, 스케일링 계수 또는 클리핑 범위(Clipping Range)가 잘못되면 정책 성능이 심각하게 저하될 수 있다.
+
+좌표계 일관성(Coordinate-Frame Consistency) 역시 매우 중요하다. 몸체 속도, 중력 벡터, 지형 측정값 및 명령 방향은 월드 좌표계(World Frame), 몸체 좌표계(Body Frame) 또는 진행 방향 정렬 좌표계(Heading-Aligned Frame)로 표현될 수 있다. 학습과 실제 배치 사이에서 좌표계가 불일치하면 체계적으로 잘못된 행동이 생성될 수 있다. 따라서 정책 인터페이스는 각 관측 변수와 행동 변수를 기존 모델 기반 제어기와 동일한 수준으로 정밀하게 정의해야 한다.
+
+신경망은 본질적으로 제약조건 만족을 보장하지 않기 때문에 학습된 정책 주변에는 일반적으로 안전 계층(Safety Layer)이 배치된다. 관절 명령은 기계적 범위 내로 제한할 수 있고, 토크와 속도 제한을 강제할 수 있으며, 비정상적인 몸체 자세가 감지되면 복구 또는 정지 동작을 실행할 수 있다. 독립적인 감시 시스템은 잘못된 관측값, 정책 발산, 과도한 접촉력, 통신 장애 또는 액추에이터 고장을 감지할 수 있다.
+
+복구 정책(Recovery Policy)은 정상 이동 정책과 분리하여 구성할 수 있다. 로봇이 큰 외란을 받거나 정상적인 이동 분포를 벗어난 자세로 넘어졌을 경우 전용 복구 제어기가 다시 기립 자세를 확보하도록 시도할 수 있다. 이후 감독 상태 머신(Supervisory State Machine)은 로봇 상태에 따라 기립, 이동, 복구, 제어 정지 및 기타 동작 모드를 선택한다.
+
+학습 기반 이동은 보행 시점(Gait Timing)을 명시적으로 프로그래밍하지 않더라도 보행 구조(Gait Structure) 자체를 제거하지는 않는다. 정책은 트로트(Trot), 워크(Walk), 바운드(Bound) 또는 기타 알려진 보행과 유사한 주기적 접촉 패턴을 발견하는 경우가 많으며, 이는 이러한 패턴이 동역학적으로 효율적인 해이기 때문이다. 일부 아키텍처에서는 제어 가능성, 예측 가능성 및 행동 간 전환 성능을 향상시키기 위해 보행 위상이나 접촉 스케줄을 명시적으로 제공하기도 한다.
+
+명령 조건부 정책(Command-Conditioned Policy)은 하나의 네트워크에서 다양한 이동 행동을 표현할 수 있다. 목표 전진 속도, 횡방향 속도, 요 회전 속도(Yaw Rate), 몸체 높이 또는 보행 파라미터를 관측 벡터에 포함할 수 있다. 동일한 정책이 입력 명령에 따라 서로 다른 움직임을 생성할 수 있으므로 별도의 제어기 수를 줄이고 넓은 이동 동작 범위(Locomotion Envelope)에서 연속적인 전환을 구현할 수 있다.
+
+지형 조건부 정책(Terrain-Conditioned Policy)은 이러한 개념을 확장하여 환경 형상에 따라 행동을 적응시킨다. 평탄한 지면에서는 효율적인 낮은 발 궤적을 사용할 수 있지만 거친 지형에서는 더 높은 발 궤적과 보수적인 몸체 움직임을 생성할 수 있다. 충분히 대표적인 지형 분포에서 정책을 학습하면 경사면, 계단, 틈새 및 불규칙한 발 디딤 위치에 따라 서로 다른 접촉 전략을 생성할 수 있다.
+
+하이브리드 모델 기반 및 학습 기반 스택(Hybrid Model-Based and Learning-Based Stack)은 신뢰성과 유연성을 동시에 향상시킬 수 있다. 강화학습 정책은 발 디딤 위치, 보행 파라미터, 잔차 힘(Residual Force) 또는 관절 보정값을 생성하고 MPC 또는 WBC는 명시적인 동역학적 제약을 유지할 수 있다. 반대로 모델 기반 제어기가 기준 행동을 생성하고 학습된 잔차 정책이 해석적으로 식별하기 어려운 모델링 오차를 보상하도록 구성할 수도 있다.
+
+잔차 학습(Residual Learning)은 이미 신뢰할 수 있는 기존 제어기가 존재하는 경우 특히 효과적이다. 이동을 처음부터 모두 학습하는 대신 정책은 기준 모델 기반 명령에 대한 보정값만 학습한다. 이를 통해 학습해야 할 행동 공간을 축소할 수 있으며, 학습된 보정이 제한되거나 비활성화되거나 감독 시스템에 의해 신뢰할 수 없다고 판단되는 경우에도 의미 있는 기본 동작(Fallback Behavior)을 유지할 수 있다.
+
+평가(Evaluation)는 평균 보상값이나 단순한 보행 성공 시연을 넘어 수행되어야 한다. 정책은 다양한 속도 범위, 지형 종류, 마찰 조건, 탑재 하중 변화, 외부 충격, 센서 노이즈, 지연 변화 및 액추에이터 성능 저하 조건에서 시험되어야 한다. 반복적인 시험과 통제된 외란 실험을 통해 관찰된 강건성이 단순히 유리한 시험 조건의 결과가 아니라 실제 일반화(Generalization) 능력에 의한 것인지 확인해야 한다.
+
+시뮬레이션-실환경 검증(Sim-to-Real Validation)은 단계적으로 수행해야 한다. 초기 시험은 제한 장치가 적용되거나 저속인 상태에서 수행한 후 점진적으로 동적 움직임과 어려운 지형으로 확대할 수 있다. 관측값, 행동, 관절 상태, 추정 접촉, 모터 전류 및 몸체 움직임에 대한 로그(Log)를 시뮬레이션 결과와 비교하여 체계적인 차이를 식별하고 학습 환경 개선에 반영해야 한다.
+
+피지컬 AI(Physical AI)의 관점에서 강화학습 이동 정책은 상위 수준 지능과 물리적 상호작용 사이에 위치하는 적응형 실행 계층(Adaptive Execution Layer)으로 기능한다. 작업 수준 시스템은 로봇이 어디로, 왜 이동해야 하는지를 결정하고, 학습된 정책은 관절형 몸체가 명령, 지형, 접촉 및 외란에 어떻게 지속적으로 대응해야 하는지를 결정한다. 실제 실행에서 얻은 피드백은 이후 내비게이션 및 상위 수준 추론에 다시 영향을 줄 수 있다.
+
+따라서 강건한 강화학습 정책 스택(Robust RL Policy Stack)의 성능은 신경망 자체만으로 결정되지 않는다. 시뮬레이션 품질, 관측 설계, 행동 표현, 보상 함수 구성, 도메인 랜덤화, 액추에이터 모델링, 시간 처리, 안전 감독 및 검증이 함께 실제 환경 성능을 결정한다. 이러한 구성요소를 하나의 통합 시스템으로 설계할 때 학습 기반 이동은 복잡한 물리 환경에서 민첩하고 높은 적응성을 갖는 행동을 제공할 수 있다.
+
+##  
+
+## 02.04. Hybrid Locomotion Model Based RL Combination [w/Code]
+
+![](images/image4.png){width="7.268055555555556in" height="7.268055555555556in"}
+
+Hybrid locomotion combines model-based control and reinforcement learning to exploit complementary strengths within a single control architecture. Model-based methods provide explicit dynamics, interpretable constraints, and predictable safety boundaries, while learned policies capture nonlinear effects and adaptive behaviors that are difficult to describe analytically. The objective is not to replace one method with the other, but to assign each method to the control functions where it provides the greatest value.
+
+Conventional model-based locomotion commonly relies on Model Predictive Control (MPC), Whole-Body Control (WBC), trajectory optimization, and impedance control. These techniques use mathematical models to calculate feasible body motion, contact forces, and joint commands. Their behavior can be inspected through physical quantities such as momentum, ground reaction force, friction limits, joint torque, and stability constraints.
+
+Reinforcement Learning (RL) approaches locomotion from a different direction. Instead of explicitly deriving every control relationship, a policy learns mappings from observations and commands to actions through repeated interaction. This makes RL particularly effective for complicated terrain, uncertain contact, actuator nonlinearities, and behaviors where an accurate analytical model would be expensive or impossible to construct.
+
+A hybrid architecture preserves the structured physical reasoning of model-based control while introducing learned components where uncertainty or complexity limits analytical methods. The learned component may operate above, inside, or below the model-based controller. Its role can range from selecting high-level locomotion parameters to generating small residual corrections at the actuator level.
+
+One common architecture uses RL for high-level gait adaptation while retaining MPC and WBC for dynamic execution. The policy can select gait frequency, duty factor, body height, step length, or desired foothold characteristics according to terrain and command conditions. MPC then computes dynamically feasible body motion and contact forces, while WBC converts these objectives into joint-level commands.
+
+Another approach uses learning for foothold selection. A model-based planner may generate nominal footsteps from robot velocity and gait geometry, while a learned policy modifies candidate footholds according to terrain observations. The model-based controller subsequently verifies kinematic reachability, contact constraints, and dynamic feasibility before the selected footholds are physically executed.
+
+Residual reinforcement learning provides a particularly practical hybrid structure. A conventional controller first produces a nominal action based on known robot dynamics, and a learned policy generates a correction to that action. The final command is therefore formed from a physically meaningful baseline plus an adaptive residual rather than being produced entirely by a neural network.
+
+Residual actions can be applied at several levels. A policy may modify desired ground reaction forces generated by MPC, adjust body trajectories, correct foot positions, change joint position references, or compensate actuator torques. Selecting the residual interface determines how much authority learning receives and how strongly the model-based controller constrains the resulting behavior.
+
+Limiting residual magnitude provides a natural safety mechanism. If the nominal controller is known to maintain stable operation within a particular region, the learned correction can be bounded so that it improves performance without completely overriding the baseline behavior. This approach can simplify training because the policy learns only the difference between nominal and desired behavior rather than the complete locomotion task.
+
+Learning can also improve the internal models used by optimization-based controllers. Neural networks may estimate unknown friction coefficients, terrain compliance, actuator response, external disturbances, payload changes, or residual dynamics. These estimates can be supplied to MPC or WBC so that optimization remains explicitly model-based while operating with parameters that better reflect the current physical system.
+
+Learned dynamics models provide another integration mechanism. Instead of replacing the complete analytical model, a network can predict the modeling error between analytical dynamics and measured behavior. The controller then combines nominal physics with the learned residual model. This physics-informed structure often generalizes more reliably than learning the complete dynamics from data because known physical relationships remain explicitly represented.
+
+Adaptive terrain understanding is especially suitable for hybrid control. Perception networks can classify terrain, estimate local geometry, infer traversability, or predict friction before contact. These learned estimates are passed to model-based planning and optimization layers, where they influence foothold selection, velocity limits, contact-force constraints, and body trajectory generation.
+
+The reverse interaction is also useful: model-based calculations can provide structured inputs to learned policies. Predicted contact forces, stability margins, feasible foothold regions, or future body states can become observations for an RL policy. The policy therefore reasons over physically meaningful quantities rather than learning every relationship directly from raw sensor measurements.
+
+Safety filters can be positioned between a learned policy and physical actuation. A policy proposes an action, but an optimization layer checks whether that action violates joint, torque, friction, collision, or stability constraints. If necessary, the proposed command is projected onto a feasible set. This allows learning to explore flexible behavior while explicit physics remains responsible for enforcing critical boundaries.
+
+Control Barrier Functions, constrained optimization, and safety-oriented quadratic programs can serve this filtering role. Their purpose is not necessarily to generate nominal locomotion but to modify unsafe commands minimally. Such architectures create a clear separation between performance-oriented learning and constraint-oriented control, which is valuable when learned behavior must be deployed on expensive physical hardware.
+
+Hybrid systems can also switch between complete controllers rather than blend individual commands. A supervisory controller may use model-based locomotion on predictable terrain and activate a learned policy for highly irregular surfaces or recovery behaviors. Controller switching requires careful transition management because abrupt changes in internal state, gait phase, or command representation can destabilize the robot.
+
+A mixture-of-experts architecture provides a smoother alternative. Multiple specialized policies or controllers can be trained for different terrains, speeds, payloads, or behaviors, while a gating mechanism determines their contribution. Model-based feasibility checks can constrain the selected output. This allows specialization without requiring one policy to represent the entire locomotion operating envelope.
+
+Training a hybrid policy requires the model-based components to be represented inside the training loop when they influence policy actions. If an RL policy learns residual corrections around MPC, the simulation should reproduce the MPC behavior that will exist during deployment. Otherwise, the policy may learn corrections for a baseline controller that differs from the real implementation.
+
+Domain randomization remains important because hybrid control does not eliminate model uncertainty. Robot mass, payload, actuator strength, joint friction, communication delay, ground friction, terrain geometry, and sensor noise can be randomized during training. The model-based controller supplies structured nominal behavior, while the learned component develops robustness against variations not fully captured by the nominal model.
+
+Reward design in hybrid systems can focus more directly on performance improvements over the baseline controller. Rewards may encourage velocity tracking, stability, energy efficiency, terrain traversal, smooth contact, and disturbance rejection while penalizing excessive residual corrections. Penalizing correction magnitude encourages the policy to preserve model-based behavior unless modification produces meaningful benefit.
+
+The allocation of authority between model-based and learned components is a fundamental design decision. Too little learning authority may prevent meaningful adaptation, while excessive authority can effectively bypass the physical guarantees of the baseline controller. Authority can therefore be conditioned on terrain difficulty, estimator confidence, policy uncertainty, speed, or proximity to safety constraints.
+
+Policy confidence can become part of supervisory control. When observations are far outside the training distribution or policy uncertainty becomes high, the system can reduce learned authority and rely more strongly on conservative model-based control. Conversely, within familiar operating conditions, the learned component can receive greater authority to improve agility, efficiency, or terrain adaptation.
+
+Real-time scheduling is more complicated in hybrid systems because neural inference and numerical optimization must coexist. MPC, WBC, perception networks, policy inference, state estimation, and actuator loops may all operate at different frequencies. Their interfaces require consistent timestamps and bounded latency so that learned corrections are applied to the same physical state assumed by the model-based controller.
+
+Failure handling must consider both numerical and learned components. MPC may become infeasible, an optimization solver may exceed its deadline, or a neural policy may receive corrupted observations. Supervisory logic should detect these conditions and transition toward known fallback behaviors such as standing, conservative walking, reduced speed, or controlled stopping rather than allowing one failed component to propagate instability.
+
+Validation should separately evaluate the baseline controller, learned component, and combined system. This makes it possible to determine whether learning actually improves performance and whether the model-based controller continues to provide useful protection. Ablation testing can disable individual learned corrections, perception modules, or safety filters to identify which components are responsible for observed behavior.
+
+Robustness testing should include terrain variation, low friction, payload changes, external pushes, actuator degradation, perception errors, sensor noise, and timing disturbances. A hybrid system should ideally degrade gracefully: as uncertainty increases, performance may become more conservative, but the robot should avoid sudden transitions from successful locomotion to uncontrolled failure.
+
+Hybrid architectures are particularly valuable for quadruped Physical AI because high-level intelligence frequently requests behaviors that cannot be anticipated completely during controller design. The model-based stack provides a physically grounded execution framework, while learning supplies adaptation to environmental diversity and accumulated experience. Together they connect semantic task intelligence with reliable physical interaction.
+
+The same principle can extend beyond locomotion. When a quadruped carries a manipulator, payload, sensor mast, or tool, model-based whole-body constraints can preserve balance while learned components adapt contact strategies or compensate unknown interaction dynamics. Hybrid control therefore provides a scalable foundation for locomotion-manipulation systems operating under changing physical conditions.
+
+The long-term value of hybrid locomotion lies in maintaining a clear division between what is known and what must be learned. Rigid-body dynamics, actuator limits, geometric constraints, and safety boundaries can remain explicit, while uncertain friction, terrain interaction, unmodeled dynamics, and complex adaptation can be learned from data. This separation improves interpretability and reduces unnecessary learning burden.
+
+A successful model-based and RL combination is therefore not defined by simply placing a neural network beside MPC or WBC. It requires deliberate selection of interfaces, authority limits, training distributions, safety mechanisms, timing architecture, and fallback behavior. When these elements are jointly engineered, hybrid locomotion can achieve the predictability of physics-based control together with the adaptability of learned intelligence.
+
+하이브리드 이동(Hybrid Locomotion)은 하나의 제어 아키텍처(Control Architecture) 안에서 상호 보완적인 장점을 활용하기 위해 모델 기반 제어(Model-Based Control)와 강화학습(Reinforcement Learning, RL)을 결합한다. 모델 기반 방법은 명시적인 동역학, 해석 가능한 제약조건 및 예측 가능한 안전 경계(Safety Boundary)를 제공하고, 학습된 정책(Learned Policy)은 해석적으로 표현하기 어려운 비선형 효과와 적응 행동을 포착한다. 목적은 한 방법을 다른 방법으로 대체하는 것이 아니라 각각의 방법이 가장 큰 가치를 제공할 수 있는 제어 기능에 적절하게 배치하는 것이다.
+
+전통적인 모델 기반 이동(Model-Based Locomotion)은 일반적으로 모델 예측 제어(Model Predictive Control, MPC), 전신 제어(Whole-Body Control, WBC), 궤적 최적화(Trajectory Optimization), 임피던스 제어(Impedance Control)에 의존한다. 이러한 기법은 수학적 모델을 이용하여 실행 가능한 몸체 움직임, 접촉력 및 관절 명령을 계산한다. 그 동작은 운동량(Momentum), 지면 반력(Ground Reaction Force), 마찰 한계, 관절 토크 및 안정성 제약과 같은 물리량을 통해 분석할 수 있다.
+
+강화학습(Reinforcement Learning, RL)은 이동 문제에 다른 방향에서 접근한다. 모든 제어 관계를 명시적으로 유도하는 대신 정책은 반복적인 상호작용을 통해 관측값과 명령으로부터 행동(Action)으로 이어지는 매핑을 학습한다. 이러한 특성으로 인해 RL은 복잡한 지형, 불확실한 접촉, 액추에이터 비선형성(Actuator Nonlinearity), 그리고 정확한 해석 모델을 구축하기 어렵거나 비용이 많이 드는 행동을 처리하는 데 특히 효과적이다.
+
+하이브리드 아키텍처(Hybrid Architecture)는 모델 기반 제어의 구조화된 물리적 추론(Physical Reasoning)을 유지하면서 불확실성이나 복잡성으로 인해 해석적 방법에 한계가 발생하는 부분에 학습 구성요소를 도입한다. 학습 구성요소는 모델 기반 제어기의 상위, 내부 또는 하위에서 동작할 수 있다. 그 역할은 상위 수준 이동 파라미터 선택에서부터 액추에이터 수준의 작은 잔차 보정(Residual Correction)을 생성하는 것까지 다양하게 구성할 수 있다.
+
+일반적인 아키텍처 중 하나는 동역학적 실행을 MPC와 WBC에 유지하면서 상위 수준 보행 적응(High-Level Gait Adaptation)에 RL을 사용하는 것이다. 정책은 지형과 명령 조건에 따라 보행 주파수(Gait Frequency), 듀티 팩터(Duty Factor), 몸체 높이, 보폭(Step Length) 또는 목표 발 디딤 특성을 선택할 수 있다. 이후 MPC가 동역학적으로 실행 가능한 몸체 움직임과 접촉력을 계산하고, WBC가 이러한 목표를 관절 수준 명령으로 변환한다.
+
+또 다른 접근 방법은 발 디딤 위치 선택(Foothold Selection)에 학습을 사용하는 것이다. 모델 기반 계획기는 로봇 속도와 보행 기하학(Gait Geometry)을 기반으로 기준 발걸음을 생성하고, 학습된 정책은 지형 관측값에 따라 후보 발 디딤 위치를 수정할 수 있다. 이후 모델 기반 제어기는 선택된 발 디딤 위치가 실제로 실행되기 전에 운동학적 도달 가능성(Kinematic Reachability), 접촉 제약 및 동역학적 실행 가능성을 검증한다.
+
+잔차 강화학습(Residual Reinforcement Learning)은 특히 실용적인 하이브리드 구조를 제공한다. 기존 제어기가 알려진 로봇 동역학을 기반으로 먼저 기준 행동(Nominal Action)을 생성하고, 학습된 정책은 이 행동에 대한 보정값을 생성한다. 따라서 최종 명령은 신경망에 의해 완전히 생성되는 것이 아니라 물리적으로 의미 있는 기준 명령과 적응형 잔차(Adaptive Residual)의 조합으로 구성된다.
+
+잔차 행동(Residual Action)은 여러 제어 수준에 적용할 수 있다. 정책은 MPC가 생성한 목표 지면 반력을 수정하거나, 몸체 궤적을 조정하거나, 발 위치를 보정하거나, 관절 위치 기준값을 변경하거나, 액추에이터 토크를 보상할 수 있다. 어떤 잔차 인터페이스(Residual Interface)를 선택하는지는 학습에 어느 정도의 제어 권한을 부여할 것인지와 모델 기반 제어기가 결과 행동을 얼마나 강하게 제한할 것인지를 결정한다.
+
+잔차 크기(Residual Magnitude)를 제한하면 자연스러운 안전 메커니즘(Safety Mechanism)을 구성할 수 있다. 기준 제어기가 특정 영역에서 안정적인 동작을 유지한다고 알려져 있다면, 학습된 보정값의 범위를 제한하여 기본 동작을 완전히 무시하지 않으면서 성능을 향상시킬 수 있다. 또한 정책이 전체 이동 작업이 아니라 기준 행동과 목표 행동 사이의 차이만 학습하면 되기 때문에 학습 과정도 단순화할 수 있다.
+
+학습은 최적화 기반 제어기(Optimization-Based Controller) 내부에서 사용하는 모델 자체를 개선하는 데에도 활용할 수 있다. 신경망(Neural Network)은 알려지지 않은 마찰 계수, 지형 순응성(Terrain Compliance), 액추에이터 응답, 외부 외란, 탑재 하중 변화 또는 잔차 동역학(Residual Dynamics)을 추정할 수 있다. 이러한 추정값을 MPC 또는 WBC에 제공하면 최적화 구조 자체는 명시적인 모델 기반 형태를 유지하면서 현재 물리 시스템을 보다 정확하게 반영하는 파라미터를 사용할 수 있다.
+
+학습된 동역학 모델(Learned Dynamics Model)은 또 다른 통합 방법을 제공한다. 전체 해석 모델을 대체하는 대신 신경망을 이용하여 해석적 동역학과 실제 측정된 거동 사이의 모델링 오차를 예측할 수 있다. 이후 제어기는 기준 물리 모델과 학습된 잔차 모델을 결합한다. 이러한 물리 정보 기반 구조(Physics-Informed Structure)는 이미 알려진 물리적 관계를 명시적으로 유지하기 때문에 전체 동역학을 데이터만으로 학습하는 것보다 더 안정적으로 일반화될 수 있다.
+
+적응형 지형 이해(Adaptive Terrain Understanding)는 하이브리드 제어에 특히 적합하다. 인지 네트워크(Perception Network)는 실제 접촉이 발생하기 전에 지형을 분류하고, 지역 형상을 추정하고, 주행 가능성(Traversability)을 판단하거나, 마찰을 예측할 수 있다. 이러한 학습 기반 추정값은 모델 기반 계획 및 최적화 계층으로 전달되어 발 디딤 위치 선택, 속도 제한, 접촉력 제약 및 몸체 궤적 생성에 영향을 준다.
+
+반대 방향의 상호작용도 유용하다. 모델 기반 계산 결과를 학습 정책의 구조화된 입력(Structured Input)으로 사용할 수 있다. 예측 접촉력, 안정성 여유(Stability Margin), 실행 가능한 발 디딤 영역 또는 미래 몸체 상태를 RL 정책의 관측값으로 제공할 수 있다. 이를 통해 정책은 원시 센서 측정값만으로 모든 관계를 직접 학습하는 대신 물리적으로 의미 있는 정보를 기반으로 의사결정을 수행할 수 있다.
+
+안전 필터(Safety Filter)는 학습된 정책과 물리적 액추에이터 사이에 배치할 수 있다. 정책이 행동을 제안하면 최적화 계층이 해당 행동이 관절, 토크, 마찰, 충돌 또는 안정성 제약을 위반하는지 검사한다. 필요한 경우 제안된 명령을 실행 가능 집합(Feasible Set) 내부로 투영(Projection)할 수 있다. 이를 통해 학습은 유연한 행동을 탐색하면서도 핵심적인 물리적 경계는 명시적인 물리 모델에 의해 유지될 수 있다.
+
+제어 장벽 함수(Control Barrier Function), 제약 최적화(Constrained Optimization), 안전 지향 이차 계획법(Safety-Oriented Quadratic Programming)은 이러한 필터링 역할을 수행할 수 있다. 이들의 목적은 반드시 기준 이동 행동을 생성하는 것이 아니라 안전하지 않은 명령을 최소한으로 수정하는 데 있다. 이러한 아키텍처는 성능 지향 학습(Performance-Oriented Learning)과 제약 지향 제어(Constraint-Oriented Control)를 명확하게 분리할 수 있어 고가의 실제 로봇 하드웨어에 학습 행동을 적용할 때 유용하다.
+
+하이브리드 시스템은 개별 명령을 혼합하는 대신 완전한 제어기 자체를 전환할 수도 있다. 감독 제어기(Supervisory Controller)는 예측 가능한 지형에서는 모델 기반 이동을 사용하고 매우 불규칙한 지형이나 복구 행동에서는 학습된 정책을 활성화할 수 있다. 그러나 내부 상태, 보행 위상 또는 명령 표현이 갑자기 변화하면 로봇이 불안정해질 수 있으므로 제어기 전환(Controller Switching) 과정은 신중하게 관리해야 한다.
+
+전문가 혼합 아키텍처(Mixture-of-Experts Architecture)는 보다 부드러운 대안을 제공한다. 서로 다른 지형, 속도, 탑재 하중 또는 행동에 특화된 여러 정책이나 제어기를 학습하고, 게이팅 메커니즘(Gating Mechanism)이 각 제어기의 기여도를 결정할 수 있다. 모델 기반 실행 가능성 검사를 통해 선택된 출력을 제한할 수 있으며, 하나의 정책이 전체 이동 동작 범위를 모두 표현하도록 요구하지 않으면서 각 영역에 대한 전문화를 가능하게 한다.
+
+하이브리드 정책(Hybrid Policy)을 학습할 때 정책 행동에 영향을 주는 모델 기반 구성요소는 학습 루프(Training Loop) 내부에 포함되어야 한다. 예를 들어 RL 정책이 MPC 주변에서 잔차 보정을 학습한다면 시뮬레이션에서도 실제 배치 시 사용될 MPC의 동작을 재현해야 한다. 그렇지 않으면 정책이 실제 구현과 다른 기준 제어기에 대한 보정값을 학습할 수 있다.
+
+하이브리드 제어를 사용하더라도 모델의 불확실성이 제거되는 것은 아니므로 도메인 랜덤화(Domain Randomization)는 여전히 중요하다. 로봇 질량, 탑재 하중, 액추에이터 출력, 관절 마찰, 통신 지연, 지면 마찰, 지형 형상 및 센서 노이즈를 학습 과정에서 무작위로 변화시킬 수 있다. 모델 기반 제어기는 구조화된 기준 행동을 제공하고, 학습 구성요소는 기준 모델이 완전히 표현하지 못하는 변화에 대한 강건성을 학습한다.
+
+하이브리드 시스템의 보상 설계(Reward Design)는 기준 제어기 대비 성능 향상에 더욱 직접적으로 집중할 수 있다. 보상은 속도 추종, 안정성, 에너지 효율, 지형 통과 능력, 부드러운 접촉 및 외란 제거를 장려하면서 과도한 잔차 보정을 억제하도록 구성할 수 있다. 보정 크기에 페널티를 부여하면 의미 있는 성능 향상이 필요한 경우가 아니라면 정책이 기존 모델 기반 행동을 유지하도록 유도할 수 있다.
+
+모델 기반 구성요소와 학습 구성요소 사이의 제어 권한 배분(Authority Allocation)은 핵심적인 설계 결정이다. 학습에 너무 적은 권한을 부여하면 의미 있는 적응이 어려워지고, 반대로 지나치게 많은 권한을 부여하면 기준 제어기의 물리적 보장 조건을 사실상 우회할 수 있다. 따라서 지형 난이도, 상태 추정 신뢰도, 정책 불확실성(Policy Uncertainty), 이동 속도 또는 안전 제약과의 근접도에 따라 학습 권한을 조정할 수 있다.
+
+정책 신뢰도(Policy Confidence)는 감독 제어의 일부로 활용할 수 있다. 관측값이 학습 분포(Training Distribution)에서 크게 벗어나거나 정책의 불확실성이 높아지는 경우 시스템은 학습 구성요소의 제어 권한을 낮추고 보수적인 모델 기반 제어에 더욱 의존할 수 있다. 반대로 익숙한 운용 조건에서는 학습 구성요소에 더 많은 권한을 부여하여 민첩성, 에너지 효율 또는 지형 적응성을 향상시킬 수 있다.
+
+하이브리드 시스템에서는 신경망 추론(Neural Inference)과 수치 최적화(Numerical Optimization)가 동시에 수행되어야 하므로 실시간 스케줄링(Real-Time Scheduling)이 더욱 복잡해진다. MPC, WBC, 인지 네트워크, 정책 추론, 상태 추정 및 액추에이터 제어 루프는 서로 다른 주파수로 동작할 수 있다. 학습된 보정값이 모델 기반 제어기가 가정한 것과 동일한 물리 상태에 적용되도록 각 인터페이스에서는 일관된 타임스탬프와 제한된 지연(Bounded Latency)을 유지해야 한다.
+
+고장 처리(Failure Handling)는 수치 계산 구성요소와 학습 구성요소를 모두 고려해야 한다. MPC가 실행 불가능 상태(Infeasible)가 되거나 최적화 솔버가 계산 마감시간을 초과하거나 신경망 정책에 손상된 관측값이 입력될 수 있다. 감독 로직은 이러한 상태를 감지하고 하나의 구성요소에서 발생한 실패가 전체 시스템의 불안정으로 확산되지 않도록 기립, 보수적 보행, 감속 또는 제어 정지(Controlled Stop)와 같은 검증된 대체 행동으로 전환해야 한다.
+
+검증(Validation)은 기준 제어기, 학습 구성요소 및 결합된 전체 시스템을 각각 별도로 평가해야 한다. 이를 통해 학습이 실제로 성능을 향상시키는지, 그리고 모델 기반 제어기가 여전히 유효한 보호 기능을 제공하는지를 판단할 수 있다. 절제 실험(Ablation Testing)을 통해 개별 학습 보정, 인지 모듈 또는 안전 필터를 비활성화하여 어떤 구성요소가 관찰된 행동에 실질적으로 기여하는지를 분석할 수 있다.
+
+강건성 시험(Robustness Testing)에는 지형 변화, 낮은 마찰, 탑재 하중 변화, 외부 충격, 액추에이터 성능 저하, 인지 오류, 센서 노이즈 및 시간 지연 외란이 포함되어야 한다. 이상적인 하이브리드 시스템은 불확실성이 증가할 때 점진적으로 성능을 낮추는 우아한 성능 저하(Graceful Degradation)를 보여야 한다. 즉 성능은 더 보수적으로 변할 수 있지만 성공적인 이동 상태에서 제어 불가능한 실패 상태로 갑작스럽게 전환되는 것은 피해야 한다.
+
+하이브리드 아키텍처는 상위 수준 지능이 제어기 설계 단계에서 완전히 예측할 수 없는 행동을 지속적으로 요구할 수 있다는 점에서 사족보행 피지컬 AI(Quadruped Physical AI)에 특히 유용하다. 모델 기반 스택은 물리적으로 근거가 있는 실행 프레임워크(Execution Framework)를 제공하고, 학습은 다양한 환경과 축적된 경험에 대한 적응 능력을 제공한다. 두 접근법을 결합함으로써 의미론적 작업 지능(Semantic Task Intelligence)과 신뢰할 수 있는 물리적 상호작용을 연결할 수 있다.
+
+동일한 원리는 이동을 넘어 다른 작업으로 확장할 수 있다. 사족보행 로봇에 매니퓰레이터(Manipulator), 탑재물, 센서 마스트(Sensor Mast) 또는 도구가 장착된 경우 모델 기반 전신 제약을 통해 균형을 유지하면서 학습 구성요소가 접촉 전략을 적응시키거나 알려지지 않은 상호작용 동역학을 보상할 수 있다. 따라서 하이브리드 제어는 변화하는 물리 조건에서 동작하는 이동-조작 시스템(Locomotion-Manipulation System)을 위한 확장 가능한 기반을 제공한다.
+
+하이브리드 이동의 장기적인 가치는 이미 알고 있는 것과 학습해야 하는 것을 명확하게 분리하는 데 있다. 강체 동역학(Rigid-Body Dynamics), 액추에이터 한계, 기하학적 제약 및 안전 경계는 명시적으로 유지할 수 있으며, 불확실한 마찰, 지형 상호작용, 모델링되지 않은 동역학(Unmodeled Dynamics) 및 복잡한 적응 행동은 데이터로부터 학습할 수 있다. 이러한 분리는 해석 가능성을 향상시키고 불필요한 학습 부담을 줄인다.
+
+따라서 성공적인 모델 기반 제어와 강화학습의 결합은 단순히 MPC 또는 WBC 옆에 신경망을 배치하는 것으로 정의되지 않는다. 인터페이스, 제어 권한 한계, 학습 분포, 안전 메커니즘, 시간 아키텍처(Timing Architecture), 대체 행동(Fallback Behavior)을 의도적으로 설계해야 한다. 이러한 요소들이 통합적으로 설계될 때 하이브리드 이동은 물리 기반 제어의 예측 가능성과 학습 지능(Learned Intelligence)의 적응성을 동시에 확보할 수 있다.
+
+##  
+
+## 02.05. Central Pattern Generator CPG Architecture [w/Code]
+
+![](images/image5.png){width="7.268055555555556in" height="7.268055555555556in"}
+
+Central Pattern Generator (CPG) architectures generate rhythmic locomotion signals through networks of coupled oscillators. The concept originates from biological motor systems, where neural circuits can produce periodic patterns such as walking even without continuously specifying every joint trajectory. In robotics, CPGs provide a compact mechanism for coordinating repeated leg movements while allowing frequency, phase, amplitude, and offset to be modified online.
+
+A CPG can be interpreted as a dynamical system whose internal state evolves toward a stable periodic orbit called a limit cycle. Once oscillation is established, the system continuously produces rhythmic signals without requiring a stored trajectory for every gait cycle. This property makes CPG control attractive for locomotion because periodic motion emerges naturally from the controller dynamics rather than from repeated playback of predefined trajectories.
+
+The simplest robotic CPG may contain one oscillator for each leg, although more detailed architectures can assign oscillators to individual joints or muscle-like actuator groups. Each oscillator produces a phase-dependent signal that can be transformed into desired joint angles, foot trajectories, contact timing, or other locomotion references. Coupling between oscillators determines how the legs coordinate with one another.
+
+Phase relationships are central to gait generation. A quadruped can produce different gaits by changing the relative phase offsets among four leg oscillators. Walking, trotting, pacing, and bounding correspond to different temporal relationships between foot contacts and swing motions. Instead of storing independent trajectories for every gait, the controller can therefore represent gait structure through a compact set of phase parameters.
+
+Oscillator frequency determines the rate at which the gait cycle repeats. Increasing frequency generally increases stepping cadence, although robot speed also depends on step length, body dynamics, and terrain interaction. Frequency can be commanded directly or adapted according to desired velocity. Smoothly changing oscillator frequency allows the robot to accelerate or decelerate without abruptly resetting the gait cycle.
+
+Oscillation amplitude controls the magnitude of the generated motion. Depending on the mapping between oscillator state and physical movement, amplitude may influence joint excursion, step length, foot clearance, or body oscillation. Online amplitude modulation enables the robot to alter locomotion intensity while preserving the underlying rhythmic organization of the gait.
+
+Offset parameters shift the center of periodic motion and can modify nominal joint posture, body height, or foot position. Frequency, amplitude, phase, and offset therefore form a compact parameterization for controlling complex cyclic behavior. Higher-level locomotion modules can manipulate these variables instead of commanding every point of every joint trajectory directly.
+
+CPG models can be implemented using several mathematical oscillator formulations. Hopf oscillators are widely used because they naturally converge toward stable limit cycles with controllable amplitude and frequency. Other approaches include phase oscillators, coupled nonlinear oscillators, Matsuoka oscillators, and neural oscillator networks inspired more directly by biological reciprocal inhibition.
+
+The Hopf oscillator is particularly useful because its radial dynamics can stabilize oscillation amplitude while its angular dynamics determine phase progression. When perturbed, the oscillator tends to return toward its limit cycle. This inherent convergence provides a form of dynamical robustness and distinguishes oscillator-based generation from purely time-indexed trajectory playback.
+
+Coupling is the mechanism that transforms independent oscillators into a coordinated locomotion network. Each oscillator can influence the phase or state of other oscillators according to predefined coupling strengths and desired phase differences. Proper coupling causes the network to converge toward a stable gait relationship even when individual oscillators are temporarily disturbed.
+
+For a quadruped, coupling topology determines how front, rear, left, and right legs coordinate. Strong symmetric coupling can enforce a regular gait, while more flexible coupling can permit transitions or terrain-dependent adaptations. The topology may be fully connected, pairwise, diagonal, ipsilateral, contralateral, or organized according to a structure inspired by biological locomotor networks.
+
+CPG output is not necessarily applied directly to joints. A common architecture maps oscillator phase into a foot-space trajectory. During the swing portion of the cycle, the foot follows a trajectory that provides forward motion and ground clearance. During stance, the reference moves relative to the body in a manner consistent with propulsion and support before transitioning into the next swing phase.
+
+Inverse kinematics can convert these desired foot positions into joint references for the hip, thigh, and knee. Lower-level position, torque, or impedance controllers then execute the motion. This separation allows the CPG to organize rhythmic timing while conventional kinematic and actuator controllers handle robot-specific geometry and physical realization.
+
+Duty factor defines the fraction of a gait cycle during which a foot remains in stance. Symmetric oscillations can be modified so that swing and stance occupy different proportions of the cycle. A higher duty factor generally increases the amount of time each foot supports the robot, which can be useful for slow, stable locomotion, while lower duty factors are associated with more dynamic gaits.
+
+Sensory feedback transforms an open-loop CPG into an adaptive locomotion controller. Contact sensors, joint measurements, inertial signals, terrain perception, and force estimates can modify oscillator phase, frequency, amplitude, or coupling. This enables the rhythmic generator to synchronize its internal pattern with actual physical events rather than assuming that planned contact occurs exactly as expected.
+
+Phase resetting is an important feedback mechanism. If a foot touches the ground earlier than predicted, the oscillator phase can be advanced or reset to a stance-related state. If contact is delayed, the swing phase can be extended or modified. Such event-based synchronization helps the controller accommodate terrain-height errors and reduces disagreement between internal gait timing and real contact timing.
+
+Load feedback can also influence the CPG. Increased force on one leg may prolong stance, alter the timing of neighboring legs, or modify oscillator amplitude. These responses resemble biological reflex mechanisms and can improve stability by allowing the gait pattern to adapt to asymmetric loading, payload shifts, slopes, or external disturbances.
+
+Body orientation feedback provides another adaptation pathway. Roll, pitch, or angular velocity measured by an inertial measurement unit can modulate leg trajectories or oscillator parameters. For example, legs on one side of the robot can increase extension when the body rolls toward that side, producing corrective support while the basic rhythmic pattern remains active.
+
+Terrain perception can modify CPG parameters before contact occurs. An elevation map or depth sensor may indicate an approaching obstacle, causing increased foot clearance or altered step length. A slope estimate can influence body posture and stance timing. In this architecture, perception does not replace the oscillator but adjusts its parameters according to environmental context.
+
+Gait transitions can be achieved by continuously modifying phase relationships and oscillator parameters. Instead of stopping one gait and starting another, desired phase offsets can gradually move from a walking configuration toward a trotting or bounding configuration. Smooth parameter interpolation reduces discontinuities in foot motion and contact forces during behavioral transitions.
+
+Transition stability depends on coupling dynamics and the speed at which parameters change. If desired phase offsets are changed too rapidly, oscillators may temporarily lose coordination or generate undesirable contact sequences. Practical implementations therefore limit parameter rates, monitor contact states, or use dedicated transition schedules to preserve physically meaningful support patterns.
+
+CPGs can operate as standalone trajectory generators or as components inside larger model-based architectures. A CPG may provide gait phase and nominal foot trajectories while Model Predictive Control computes body motion and ground reaction forces. Whole-Body Control can then enforce dynamic consistency and transform these objectives into joint torques.
+
+This combination is useful because the CPG efficiently represents periodic timing while optimization-based control handles constraints that oscillators do not explicitly represent. Friction limits, actuator torque bounds, body momentum, and contact-force feasibility can remain within MPC or WBC, while the CPG supplies a stable rhythmic structure for contact scheduling and swing-leg motion.
+
+CPGs can also be integrated with reinforcement learning. Instead of asking an RL policy to generate every joint action, the policy can output CPG parameters such as frequency, amplitude, phase offset, duty factor, or trajectory modulation. This reduces the dimensionality of the learned action space and embeds useful locomotion structure directly into the policy interface.
+
+Learning can additionally tune oscillator coupling, sensory feedback gains, or terrain-dependent parameter mappings. The resulting controller combines the regularity and interpretability of oscillator dynamics with the adaptation capability of data-driven methods. Because the learned policy operates on structured locomotion parameters, its behavior may be easier to analyze than direct torque-level neural control.
+
+One advantage of CPG control is graceful recovery from temporary disturbances. Because oscillator dynamics continuously evolve toward stable rhythmic behavior, a perturbation does not necessarily require complete trajectory replanning. Sensory feedback can shift the oscillator state, after which the network naturally returns toward coordinated periodic motion as physical conditions stabilize.
+
+However, rhythmic stability alone does not guarantee whole-body stability. A perfectly synchronized oscillator network can still command motions that violate friction constraints, exceed joint limits, or destabilize the robot body. CPG architectures therefore require appropriate kinematic limits, feedback mechanisms, safety supervision, and potentially model-based stabilization for demanding dynamic locomotion.
+
+Parameter tuning is another important challenge. Coupling gains, phase offsets, oscillator frequencies, amplitudes, duty factors, feedback gains, and trajectory mappings interact with one another. Parameters that work well for one robot may perform poorly on another because morphology, mass distribution, actuator bandwidth, and leg geometry strongly influence the resulting physical dynamics.
+
+Simulation provides an effective environment for CPG design and tuning. Large parameter spaces can be explored without risking hardware, and optimization or learning algorithms can automatically search for efficient gait configurations. Candidate controllers should nevertheless be validated under realistic actuator dynamics, sensor delays, friction variation, and terrain disturbances before physical deployment.
+
+Real-time implementation of a CPG is generally computationally lightweight compared with repeated large-scale optimization. Oscillator state equations can be integrated at high frequency using modest computational resources. This makes CPG architectures attractive for embedded controllers, although the surrounding perception, estimation, optimization, and safety layers may still require substantial computing capability.
+
+For quadruped Physical AI, CPGs provide a useful intermediate representation between high-level behavioral intention and low-level joint execution. A higher-level system can request faster motion, cautious walking, increased clearance, or a different gait, and these semantic intentions can be translated into a small number of oscillator and trajectory parameters.
+
+The architecture is especially powerful when rhythmic generation, sensory adaptation, model-based stabilization, and learning are treated as complementary rather than competing approaches. The CPG supplies temporal organization, feedback aligns rhythm with physical contact, optimization enforces dynamic feasibility, and learning adapts parameters to conditions that are difficult to encode manually.
+
+A well-designed CPG architecture therefore functions as more than a periodic signal generator. It provides a dynamical coordination layer that organizes leg timing, supports smooth gait transitions, incorporates sensory events, and exposes compact parameters to higher-level controllers. Integrated with modern estimation and control methods, it offers an efficient and interpretable foundation for adaptive quadruped locomotion.
+
+중추 패턴 생성기(Central Pattern Generator, CPG) 아키텍처는 결합된 진동자(Coupled Oscillator) 네트워크를 통해 주기적인 이동 신호를 생성한다. 이 개념은 모든 관절 궤적을 지속적으로 명시하지 않아도 신경 회로가 보행과 같은 주기적 패턴을 생성할 수 있는 생물학적 운동 시스템(Biological Motor System)에서 유래한다. 로보틱스에서 CPG는 주파수, 위상, 진폭 및 오프셋을 온라인으로 변경하면서 반복적인 다리 움직임을 조정할 수 있는 간결한 메커니즘을 제공한다.
+
+CPG는 내부 상태가 극한 주기(Limit Cycle)라고 불리는 안정적인 주기 궤도로 수렴하는 동역학 시스템(Dynamical System)으로 이해할 수 있다. 일단 진동이 형성되면 시스템은 각각의 보행 주기에 대한 저장된 궤적 없이도 주기적인 신호를 지속적으로 생성한다. 이러한 특성은 미리 정의된 궤적을 반복 재생하는 대신 제어기 자체의 동역학에서 주기적 움직임이 자연스럽게 발생하기 때문에 CPG 제어를 이동 제어에 적합하게 만든다.
+
+가장 단순한 로봇 CPG는 각각의 다리에 하나의 진동자(Oscillator)를 배치할 수 있지만, 보다 세부적인 아키텍처에서는 개별 관절 또는 근육과 유사한 액추에이터 그룹마다 진동자를 할당할 수도 있다. 각 진동자는 위상에 따라 변화하는 신호를 생성하며, 이를 목표 관절 각도, 발 궤적, 접촉 시점 또는 기타 이동 기준값으로 변환할 수 있다. 진동자 사이의 결합(Coupling)은 각각의 다리가 서로 어떻게 협조하는지를 결정한다.
+
+위상 관계(Phase Relationship)는 보행 생성(Gait Generation)의 핵심 요소이다. 사족보행 로봇은 네 개의 다리 진동자 사이의 상대적인 위상 오프셋(Phase Offset)을 변경함으로써 서로 다른 보행을 생성할 수 있다. 워킹(Walking), 트로팅(Trotting), 페이싱(Pacing), 바운딩(Bounding)은 발 접촉과 스윙 움직임 사이의 서로 다른 시간적 관계에 해당한다. 따라서 각 보행에 대해 독립적인 궤적을 저장하는 대신 간결한 위상 파라미터 집합을 통해 보행 구조를 표현할 수 있다.
+
+진동자 주파수(Oscillator Frequency)는 보행 주기가 반복되는 속도를 결정한다. 주파수가 증가하면 일반적으로 스텝 주기(Stepping Cadence)가 증가하지만 로봇의 실제 속도는 보폭, 몸체 동역학 및 지형과의 상호작용에도 영향을 받는다. 주파수는 직접 명령할 수도 있고 목표 속도에 따라 적응적으로 조절할 수도 있다. 진동자 주파수를 부드럽게 변화시키면 보행 주기를 갑자기 초기화하지 않고도 로봇을 가속하거나 감속할 수 있다.
+
+진동 진폭(Oscillation Amplitude)은 생성되는 움직임의 크기를 제어한다. 진동자 상태와 물리적 움직임 사이의 매핑 방식에 따라 진폭은 관절 운동 범위, 보폭, 발 여유 높이(Foot Clearance) 또는 몸체 진동에 영향을 줄 수 있다. 온라인 진폭 변조(Online Amplitude Modulation)를 사용하면 보행의 기본적인 주기 구조를 유지하면서 이동 동작의 크기를 변경할 수 있다.
+
+오프셋 파라미터(Offset Parameter)는 주기적 움직임의 중심을 이동시키며 기준 관절 자세, 몸체 높이 또는 발 위치를 변경할 수 있다. 따라서 주파수, 진폭, 위상 및 오프셋은 복잡한 주기 행동을 제어하기 위한 간결한 파라미터화(Parameterization)를 구성한다. 상위 수준 이동 모듈은 모든 관절 궤적의 각 지점을 직접 명령하는 대신 이러한 변수들을 조절할 수 있다.
+
+CPG 모델은 여러 형태의 수학적 진동자 모델(Mathematical Oscillator Model)을 사용하여 구현할 수 있다. 호프 진동자(Hopf Oscillator)는 제어 가능한 진폭과 주파수를 갖는 안정적인 극한 주기로 자연스럽게 수렴하기 때문에 널리 사용된다. 이외에도 위상 진동자(Phase Oscillator), 결합 비선형 진동자(Coupled Nonlinear Oscillator), 마츠오카 진동자(Matsuoka Oscillator), 생물학적 상호 억제(Reciprocal Inhibition)에서 직접 영감을 얻은 신경 진동자 네트워크(Neural Oscillator Network) 등을 사용할 수 있다.
+
+호프 진동자(Hopf Oscillator)는 반경 방향 동역학(Radial Dynamics)이 진동 진폭을 안정화하고 각도 방향 동역학(Angular Dynamics)이 위상의 진행을 결정할 수 있기 때문에 특히 유용하다. 외란이 발생하더라도 진동자는 다시 극한 주기로 복귀하려는 특성을 가진다. 이러한 내재적 수렴 특성(Inherent Convergence)은 일종의 동역학적 강건성(Dynamical Robustness)을 제공하며, 진동자 기반 생성 방식을 단순한 시간 인덱스 궤적 재생(Time-Indexed Trajectory Playback)과 구별한다.
+
+결합(Coupling)은 서로 독립적인 진동자들을 하나의 협조된 이동 네트워크로 변환하는 메커니즘이다. 각각의 진동자는 사전에 정의된 결합 강도(Coupling Strength)와 목표 위상차(Desired Phase Difference)에 따라 다른 진동자의 위상 또는 상태에 영향을 줄 수 있다. 적절한 결합이 적용되면 개별 진동자가 일시적으로 교란되더라도 네트워크는 안정적인 보행 관계로 다시 수렴할 수 있다.
+
+사족보행 로봇에서 결합 토폴로지(Coupling Topology)는 전방, 후방, 좌측 및 우측 다리가 어떻게 협조하는지를 결정한다. 강한 대칭 결합(Symmetric Coupling)은 규칙적인 보행을 강제할 수 있고, 보다 유연한 결합은 보행 전환이나 지형에 따른 적응을 허용할 수 있다. 토폴로지는 완전 연결, 쌍별 연결, 대각선 연결, 동측 연결(Ipsilateral Coupling), 대측 연결(Contralateral Coupling) 또는 생물학적 이동 신경망 구조를 모방한 형태로 구성할 수 있다.
+
+CPG 출력은 반드시 관절에 직접 적용되는 것은 아니다. 일반적인 아키텍처에서는 진동자의 위상을 발 공간 궤적(Foot-Space Trajectory)으로 매핑한다. 보행 주기의 스윙 구간 동안 발은 전진 움직임과 충분한 지면 여유를 제공하는 궤적을 따른다. 지지 구간 동안에는 추진력과 지지를 유지할 수 있도록 몸체에 대해 상대적으로 움직인 후 다음 스윙 위상으로 전환된다.
+
+역기구학(Inverse Kinematics)은 이러한 목표 발 위치를 엉덩이(Hip), 대퇴(Thigh), 무릎(Knee)의 관절 기준값으로 변환할 수 있다. 이후 하위 수준의 위치, 토크 또는 임피던스 제어기가 실제 움직임을 실행한다. 이러한 분리 구조를 통해 CPG는 주기적인 시간 구조를 담당하고, 기존의 운동학 및 액추에이터 제어기는 로봇 고유의 기하학과 물리적 실행을 담당할 수 있다.
+
+듀티 팩터(Duty Factor)는 하나의 보행 주기에서 발이 지지 상태(Stance)를 유지하는 시간의 비율을 정의한다. 대칭적인 진동을 수정하여 스윙과 지지 상태가 주기에서 서로 다른 비율을 차지하도록 할 수 있다. 높은 듀티 팩터는 일반적으로 각각의 발이 로봇을 지지하는 시간을 증가시키므로 느리고 안정적인 이동에 유용하며, 낮은 듀티 팩터는 보다 동적인 보행과 연관된다.
+
+센서 피드백(Sensory Feedback)은 개루프 CPG(Open-Loop CPG)를 적응형 이동 제어기(Adaptive Locomotion Controller)로 변환한다. 접촉 센서, 관절 측정값, 관성 신호, 지형 인지 및 힘 추정값을 이용하여 진동자의 위상, 주파수, 진폭 또는 결합을 수정할 수 있다. 이를 통해 주기 생성기가 계획된 접촉이 정확히 예상한 시점에 발생한다고 가정하는 대신 내부 패턴을 실제 물리적 사건과 동기화할 수 있다.
+
+위상 재설정(Phase Resetting)은 중요한 피드백 메커니즘이다. 발이 예상보다 일찍 지면에 닿으면 진동자의 위상을 앞당기거나 지지 상태에 해당하는 위상으로 재설정할 수 있다. 접촉이 지연되는 경우에는 스윙 위상을 연장하거나 수정할 수 있다. 이러한 이벤트 기반 동기화(Event-Based Synchronization)는 제어기가 지형 높이 오차에 대응하도록 하고 내부 보행 타이밍과 실제 접촉 타이밍 사이의 불일치를 감소시킨다.
+
+하중 피드백(Load Feedback) 역시 CPG에 영향을 줄 수 있다. 특정 다리에 가해지는 힘이 증가하면 지지 시간을 연장하거나 주변 다리의 타이밍을 변경하거나 진동자 진폭을 수정할 수 있다. 이러한 반응은 생물학적 반사 메커니즘(Biological Reflex Mechanism)과 유사하며, 비대칭 하중, 탑재 하중 이동, 경사면 또는 외부 외란에 따라 보행 패턴을 적응시켜 안정성을 향상시킬 수 있다.
+
+몸체 자세 피드백(Body Orientation Feedback)은 또 다른 적응 경로를 제공한다. 관성 측정 장치(Inertial Measurement Unit, IMU)에서 측정된 롤(Roll), 피치(Pitch) 또는 각속도를 이용하여 다리 궤적이나 진동자 파라미터를 조절할 수 있다. 예를 들어 몸체가 한쪽으로 기울어질 때 해당 방향의 다리 신장을 증가시켜 기본적인 주기 패턴을 유지하면서 보정 지지력(Corrective Support)을 생성할 수 있다.
+
+지형 인지(Terrain Perception)는 실제 접촉이 발생하기 전에 CPG 파라미터를 수정할 수 있다. 고도 맵(Elevation Map)이나 깊이 센서가 전방 장애물을 감지하면 발 여유 높이를 증가시키거나 보폭을 변경할 수 있다. 경사도 추정값은 몸체 자세와 지지 시간을 변경하는 데 사용될 수 있다. 이 아키텍처에서 인지는 진동자를 대체하는 것이 아니라 환경 상황에 따라 진동자의 파라미터를 조절한다.
+
+보행 전환(Gait Transition)은 위상 관계와 진동자 파라미터를 연속적으로 변경하여 구현할 수 있다. 하나의 보행을 중지하고 다른 보행을 새롭게 시작하는 대신 목표 위상 오프셋을 워킹 구성에서 트로팅 또는 바운딩 구성으로 점진적으로 이동시킬 수 있다. 부드러운 파라미터 보간(Parameter Interpolation)은 행동 전환 과정에서 발 움직임과 접촉력의 불연속성을 줄여준다.
+
+전환 안정성(Transition Stability)은 결합 동역학과 파라미터가 변화하는 속도에 영향을 받는다. 목표 위상 오프셋을 지나치게 빠르게 변경하면 진동자들이 일시적으로 협조 상태를 잃거나 바람직하지 않은 접촉 순서를 생성할 수 있다. 따라서 실제 구현에서는 물리적으로 의미 있는 지지 패턴을 유지하기 위해 파라미터 변화율을 제한하거나 접촉 상태를 감시하거나 전용 전환 스케줄(Transition Schedule)을 사용한다.
+
+CPG는 독립적인 궤적 생성기(Trajectory Generator)로 동작할 수도 있고 더 큰 모델 기반 아키텍처의 구성요소로 사용될 수도 있다. CPG가 보행 위상과 기준 발 궤적을 제공하고 모델 예측 제어(Model Predictive Control, MPC)가 몸체 움직임과 지면 반력을 계산하도록 구성할 수 있다. 이후 전신 제어(Whole-Body Control, WBC)는 동역학적 일관성을 보장하면서 이러한 목표를 관절 토크로 변환할 수 있다.
+
+이러한 결합은 CPG가 주기적인 타이밍을 효율적으로 표현하고 최적화 기반 제어(Optimization-Based Control)가 진동자에서 명시적으로 표현하지 않는 제약조건을 처리할 수 있다는 점에서 유용하다. 마찰 한계, 액추에이터 토크 제한, 몸체 운동량 및 접촉력 실행 가능성은 MPC 또는 WBC에서 관리하고, CPG는 접촉 스케줄링과 스윙 다리 움직임을 위한 안정적인 주기 구조를 제공할 수 있다.
+
+CPG는 강화학습(Reinforcement Learning)과도 통합할 수 있다. RL 정책에 모든 관절 행동을 직접 생성하도록 요구하는 대신 정책이 주파수, 진폭, 위상 오프셋, 듀티 팩터 또는 궤적 변조(Trajectory Modulation)와 같은 CPG 파라미터를 출력하도록 구성할 수 있다. 이를 통해 학습 행동 공간의 차원을 줄이고 유용한 이동 구조를 정책 인터페이스에 직접 포함할 수 있다.
+
+학습은 진동자 결합, 센서 피드백 게인(Sensory Feedback Gain) 또는 지형에 따른 파라미터 매핑을 조정하는 데에도 사용할 수 있다. 이렇게 구성된 제어기는 진동자 동역학의 규칙성과 해석 가능성에 데이터 기반 방법(Data-Driven Method)의 적응 능력을 결합한다. 학습 정책이 구조화된 이동 파라미터를 대상으로 동작하기 때문에 직접적인 토크 수준 신경망 제어보다 행동을 분석하기 쉬울 수 있다.
+
+CPG 제어의 장점 중 하나는 일시적인 외란으로부터 자연스럽게 복구할 수 있다는 것이다. 진동자 동역학은 지속적으로 안정적인 주기 행동으로 수렴하기 때문에 외란이 발생했다고 해서 반드시 전체 궤적을 다시 계획할 필요는 없다. 센서 피드백을 통해 진동자 상태를 변경한 후 물리적 조건이 안정화되면 네트워크가 자연스럽게 협조된 주기 운동으로 복귀할 수 있다.
+
+그러나 주기적 안정성(Rhythmic Stability) 자체가 전신 안정성(Whole-Body Stability)을 보장하는 것은 아니다. 완벽하게 동기화된 진동자 네트워크도 마찰 제약을 위반하거나 관절 한계를 초과하거나 로봇 몸체를 불안정하게 만드는 움직임을 명령할 수 있다. 따라서 CPG 아키텍처에는 적절한 운동학적 제한, 피드백 메커니즘, 안전 감독(Safety Supervision), 그리고 고난도의 동적 이동에서는 모델 기반 안정화(Model-Based Stabilization)가 필요할 수 있다.
+
+파라미터 튜닝(Parameter Tuning) 역시 중요한 과제이다. 결합 게인(Coupling Gain), 위상 오프셋, 진동자 주파수, 진폭, 듀티 팩터, 피드백 게인 및 궤적 매핑은 서로 영향을 주고받는다. 하나의 로봇에서 효과적인 파라미터가 다른 로봇에서는 제대로 동작하지 않을 수 있으며, 이는 로봇의 형태(Morphology), 질량 분포, 액추에이터 대역폭 및 다리 기하학이 실제 물리 동역학에 큰 영향을 미치기 때문이다.
+
+시뮬레이션은 CPG 설계와 튜닝을 위한 효과적인 환경을 제공한다. 실제 하드웨어를 위험에 노출시키지 않고 넓은 파라미터 공간을 탐색할 수 있으며, 최적화 또는 학습 알고리즘을 이용하여 효율적인 보행 구성을 자동으로 탐색할 수 있다. 그러나 후보 제어기는 실제 배치 전에 현실적인 액추에이터 동역학, 센서 지연, 마찰 변화 및 지형 외란 조건에서 검증되어야 한다.
+
+CPG의 실시간 구현은 일반적으로 반복적인 대규모 최적화와 비교하여 계산량이 작다. 진동자 상태 방정식(Oscillator State Equation)은 비교적 적은 연산 자원으로도 높은 주파수에서 적분할 수 있다. 이러한 특성으로 인해 CPG 아키텍처는 임베디드 제어기(Embedded Controller)에 적합하지만, 주변의 인지, 상태 추정, 최적화 및 안전 계층에는 여전히 상당한 연산 능력이 필요할 수 있다.
+
+사족보행 피지컬 AI(Quadruped Physical AI)의 관점에서 CPG는 상위 수준의 행동 의도(Behavioral Intention)와 하위 수준의 관절 실행 사이에서 유용한 중간 표현(Intermediate Representation)을 제공한다. 상위 시스템이 더 빠른 이동, 신중한 보행, 증가된 발 여유 높이 또는 다른 보행 형태를 요구하면 이러한 의미론적 의도를 소수의 진동자 및 궤적 파라미터로 변환할 수 있다.
+
+이 아키텍처는 주기 생성(Rhythmic Generation), 센서 기반 적응(Sensory Adaptation), 모델 기반 안정화 및 학습을 서로 경쟁하는 방법이 아니라 상호 보완적인 접근법으로 다룰 때 특히 강력하다. CPG는 시간적 구조를 제공하고, 피드백은 주기를 실제 물리적 접촉과 정렬하며, 최적화는 동역학적 실행 가능성을 보장하고, 학습은 사람이 직접 표현하기 어려운 조건에 맞게 파라미터를 적응시킨다.
+
+따라서 잘 설계된 CPG 아키텍처는 단순한 주기 신호 생성기(Periodic Signal Generator) 이상의 기능을 수행한다. 이는 다리의 타이밍을 조정하고, 부드러운 보행 전환을 지원하고, 센서 이벤트를 반영하며, 상위 수준 제어기에 간결한 파라미터를 제공하는 동역학적 협조 계층(Dynamical Coordination Layer)이다. 현대적인 상태 추정 및 제어 방법과 통합하면 적응형 사족보행 이동(Adaptive Quadruped Locomotion)을 위한 효율적이고 해석 가능한 기반을 제공할 수 있다.
+
+##  
+
+## 02.06. Locomotion State Machine Gait Mode Transition [w/Code]
+
+![](images/image6.png){width="7.268055555555556in" height="7.268055555555556in"}
+
+A locomotion state machine organizes robot behavior into discrete operating modes and defines the conditions under which transitions between those modes are permitted. For a quadruped, these modes may include initialization, standing, walking, trotting, dynamic locomotion, stopping, recovery, and fault handling. The state machine provides supervisory structure above continuous controllers and prevents incompatible behaviors from being activated simultaneously.
+
+Continuous locomotion controllers calculate forces, trajectories, or joint commands, but they do not necessarily determine when a robot should begin walking, change gait, stop, or enter recovery. The state machine addresses this supervisory problem. It interprets operator commands, navigation requests, estimated robot state, contact conditions, terrain information, and safety signals to determine which locomotion behavior should currently be active.
+
+Each state represents a defined control configuration rather than merely a descriptive label. A standing state may activate posture regulation and four-foot contact control, while a trotting state may activate a periodic contact schedule and dynamic body controller. A recovery state may disable normal velocity tracking and instead execute motions designed to return the robot to a controllable posture.
+
+Entry conditions specify when a state can safely become active. Before transitioning from standing to walking, the system may require valid state estimation, healthy actuators, sufficient battery capacity, acceptable body orientation, confirmed ground contacts, and a valid locomotion command. These guards prevent a high-level request from bypassing physical conditions required for safe execution.
+
+Exit conditions determine when the current state should terminate. A walking state may exit because the commanded velocity approaches zero, terrain requires another gait, the robot loses balance, or a safety monitor detects abnormal operation. Separating entry and exit conditions reduces ambiguity and helps prevent rapid switching when sensor values fluctuate near a threshold.
+
+Transition guards are logical conditions evaluated using current state and system information. A transition from walk to trot, for example, may require commanded speed above a threshold for a minimum duration while estimator confidence and terrain quality remain acceptable. Guard conditions can include hysteresis so that the reverse transition occurs at a different threshold, preventing repeated switching around one boundary.
+
+Hysteresis is especially important for gait mode selection. If the walk-to-trot threshold and trot-to-walk threshold are identical, small velocity variations can cause continuous mode oscillation. Using separated thresholds creates a stable operating region. Temporal filtering or minimum dwell times can further ensure that a mode remains active long enough for the physical system to settle.
+
+The state machine often has hierarchical organization. A top level can distinguish normal operation, recovery, and fault states, while normal operation contains subordinate modes such as stand, walk, trot, and specialized terrain locomotion. Hierarchical state machines reduce complexity because safety transitions can be defined at a common parent level instead of being duplicated for every gait.
+
+Locomotion modes are closely related to gait definitions but are not necessarily identical to them. A locomotion mode may include a particular gait together with body-height settings, controller gains, speed limits, terrain assumptions, and contact strategies. Two modes can therefore use the same nominal gait while applying different parameters for flat ground, stairs, slopes, or payload transportation.
+
+A gait transition involves more than replacing one contact schedule with another. The current phase of each leg, support configuration, body momentum, and upcoming footholds must be considered. An immediate change in phase relationships can create unsupported intervals or simultaneous leg motions that were not dynamically planned. Transition logic must therefore coordinate temporal and physical continuity.
+
+Phase-aware transitions preserve the current progression of the gait while gradually changing desired relationships among the legs. A walk can transition toward a trot by modifying phase offsets over several cycles rather than resetting all oscillators or timers. This approach reduces discontinuities in swing trajectories, ground reaction forces, and body acceleration.
+
+Contact-aware transition logic uses measured foot contact rather than relying exclusively on planned gait phase. A requested transition may be delayed until a specific foot touches down or until a stable support configuration is established. This is particularly useful on uneven terrain, where actual contact timing can differ from the nominal schedule because of height errors or compliant surfaces.
+
+Velocity commands should also be blended during transitions. Switching instantly from the speed profile of one mode to another can introduce large acceleration demands. Command filters, ramps, or trajectory generators can gradually modify linear velocity, yaw rate, body height, and other references so that the lower-level controller receives physically reasonable targets.
+
+Controller gains may require similar interpolation. Standing, walking, and dynamic running can require different stiffness, damping, tracking weights, or optimization parameters. Abruptly replacing these values can generate torque discontinuities even when the desired pose is unchanged. Gain scheduling and smooth parameter interpolation reduce these transient effects.
+
+Model Predictive Control can use state-machine outputs to select contact schedules, cost weights, prediction parameters, and motion limits. When the locomotion mode changes, MPC may gradually replace its gait template or reference trajectory while continuing to optimize body dynamics. The state machine therefore determines behavioral context, while MPC determines dynamically feasible execution within that context.
+
+Whole-Body Control similarly receives mode-dependent objectives. In standing, all feet may be constrained to remain stationary while trunk posture receives high priority. During locomotion, swing-foot tracking becomes active and stance constraints change according to gait phase. Recovery or manipulation modes may introduce additional tasks that alter the hierarchy of whole-body objectives.
+
+Learning-based policies can also be coordinated through a state machine. Separate policies may exist for standing, locomotion, stair climbing, recovery, or specialized dynamic behaviors. Alternatively, one command-conditioned policy may support multiple modes while the state machine determines command ranges, safety limits, or contextual parameters supplied to the network.
+
+When switching between learned policies, hidden internal states require attention. Recurrent policies may contain memory that reflects previous observations and actions. Activating such a policy with an inappropriate hidden state can produce unpredictable transient behavior. The state machine may therefore reset, initialize, or transfer recurrent states according to explicit transition procedures.
+
+Central Pattern Generator architectures naturally interact with gait state machines. The state machine can select desired oscillator frequency, amplitude, duty factor, and phase relationships, while the CPG generates continuous rhythmic signals. During mode changes, parameters can be interpolated so that oscillator dynamics produce smooth transitions instead of discontinuous trajectory replacement.
+
+Terrain information can trigger gait transitions automatically. Flat ground may support efficient trotting, while rough terrain may favor slower walking with longer stance duration. Stairs may activate a dedicated stepping mode, and slippery surfaces may reduce speed or increase duty factor. Terrain-triggered transitions should nevertheless consider confidence so that uncertain perception does not cause unnecessary switching.
+
+Robot payload can influence mode selection as well. A quadruped carrying a heavy or dynamically shifting payload may require reduced speed, increased stance duration, lower body acceleration, or different controller gains. Payload estimates can therefore modify transition thresholds and restrict access to aggressive locomotion modes that are inappropriate for the current mass configuration.
+
+Thermal and energy conditions can also affect locomotion states. If motor temperatures rise or battery power becomes limited, the supervisor can transition from aggressive locomotion to an energy-conservative mode. This illustrates that gait selection is not determined only by terrain and speed; it can reflect the complete operational condition of the physical robot.
+
+Recovery states are essential because locomotion controllers are normally designed around a limited region of valid body configurations. If the robot experiences a severe disturbance, slips, or falls, continuing the normal gait controller may be ineffective or unsafe. A recovery state detects this condition and activates specialized behavior intended to restore a stable posture.
+
+Recovery itself can contain multiple substates. The robot may first stop normal leg cycling, determine body orientation, reposition limbs to avoid self-collision, execute a righting maneuver, and finally return to a stable standing configuration. Only after state estimation and contacts are again reliable should the system permit transition back into normal locomotion.
+
+Fault states differ from recovery states because they may represent conditions that cannot safely be corrected through normal motion. Communication loss, actuator faults, invalid sensor data, excessive temperature, or severe power problems may require immediate controlled stopping or disabling of selected actuators. Fault transitions should normally have higher priority than performance-oriented gait transitions.
+
+An emergency state may override every normal transition rule. When critical limits are exceeded, the supervisor should not wait for a convenient gait phase before protecting hardware or preventing hazardous motion. The resulting action depends on system design and may include freezing commands, reducing torque, lowering the body, entering a safe posture, or triggering hardware-level protection.
+
+Transition priority becomes important when several conditions occur simultaneously. A navigation module may request faster motion at the same moment that the safety monitor requests deceleration. The architecture must define deterministic precedence so that safety and hardware protection override mission performance. Without explicit priority rules, independent modules can generate contradictory mode requests.
+
+State-machine events should be timestamped and logged because transition history is valuable for debugging. Logs can record the previous state, new state, trigger condition, estimated robot status, gait phase, contact state, and relevant safety signals. This information makes it possible to determine whether a failure originated in perception, supervisory logic, continuous control, or physical interaction.
+
+Transition testing should include more than nominal mode sequences. Engineers should deliberately test commands arriving near thresholds, rapidly changing velocity requests, delayed contacts, sensor dropouts, terrain classification changes, actuator warnings, and simultaneous transition conditions. These boundary cases frequently expose logical errors that remain invisible during ordinary walking demonstrations.
+
+Formal verification techniques can be useful for safety-critical transition logic. Reachability analysis, invariant checking, and systematic state-transition testing can identify forbidden sequences or states from which safe recovery is impossible. Although continuous robot dynamics remain complex, supervisory logic is sufficiently discrete that portions of its behavior can often be analyzed systematically.
+
+The state machine should avoid becoming responsible for detailed trajectory control. Its purpose is to select behavior, define transition conditions, and configure lower-level controllers. Continuous quantities such as exact foot forces, joint torques, and body accelerations are better handled by MPC, WBC, impedance control, CPGs, or learned policies designed for high-frequency feedback.
+
+For Physical AI, the locomotion state machine forms an important interface between semantic decisions and continuous physical control. A high-level system may request actions such as move quickly, approach carefully, climb stairs, stop, or recover. The state machine converts these intentions into valid control modes while checking whether current physical conditions permit the requested behavior.
+
+This supervisory layer also provides a natural location for combining model-based and learned locomotion. Different states can activate different controllers, or one state can use a hybrid combination of MPC, WBC, CPG, and RL. The state machine defines when each capability is appropriate, while safety logic constrains transitions according to robot condition and environmental uncertainty.
+
+A robust locomotion state-machine architecture therefore combines explicit mode definitions, guarded transitions, hysteresis, phase and contact awareness, smooth command blending, safety priority, recovery behavior, and detailed logging. When integrated with continuous control layers, it allows a quadruped to change behavior predictably without sacrificing dynamic continuity or physical safety.
+
+이동 상태 머신(Locomotion State Machine)은 로봇의 행동을 개별 운용 모드(Operating Mode)로 구성하고 이러한 모드 사이의 전환이 허용되는 조건을 정의한다. 사족보행 로봇(Quadruped Robot)의 경우 이러한 모드에는 초기화(Initialization), 기립(Standing), 워킹(Walking), 트로팅(Trotting), 동적 이동(Dynamic Locomotion), 정지(Stopping), 복구(Recovery), 고장 처리(Fault Handling) 등이 포함될 수 있다. 상태 머신은 연속 제어기(Continuous Controller)의 상위에서 감독 구조(Supervisory Structure)를 제공하고 서로 호환되지 않는 행동이 동시에 활성화되는 것을 방지한다.
+
+연속 이동 제어기(Continuous Locomotion Controller)는 힘, 궤적 또는 관절 명령을 계산하지만 로봇이 언제 보행을 시작하고, 보행 형태를 변경하고, 정지하거나 복구 상태로 진입해야 하는지를 반드시 결정하지는 않는다. 상태 머신은 이러한 감독 문제를 처리한다. 운전자 명령, 내비게이션 요청, 추정된 로봇 상태, 접촉 조건, 지형 정보 및 안전 신호를 해석하여 현재 어떤 이동 행동이 활성화되어야 하는지를 결정한다.
+
+각 상태(State)는 단순한 설명용 명칭이 아니라 명확하게 정의된 제어 구성(Control Configuration)을 나타낸다. 기립 상태에서는 자세 조절(Posture Regulation)과 네 발 접촉 제어(Four-Foot Contact Control)를 활성화할 수 있으며, 트로팅 상태에서는 주기적인 접촉 스케줄(Contact Schedule)과 동적 몸체 제어기(Dynamic Body Controller)를 활성화할 수 있다. 복구 상태에서는 정상적인 속도 추종을 비활성화하고 로봇을 다시 제어 가능한 자세로 복귀시키기 위한 움직임을 실행할 수 있다.
+
+진입 조건(Entry Condition)은 특정 상태가 언제 안전하게 활성화될 수 있는지를 정의한다. 기립 상태에서 워킹 상태로 전환하기 전에 시스템은 유효한 상태 추정(State Estimation), 정상적인 액추에이터, 충분한 배터리 용량, 허용 가능한 몸체 자세, 확인된 지면 접촉 및 유효한 이동 명령을 요구할 수 있다. 이러한 가드 조건(Guard Condition)은 상위 수준의 명령이 안전한 실행에 필요한 물리적 조건을 우회하는 것을 방지한다.
+
+종료 조건(Exit Condition)은 현재 상태가 언제 종료되어야 하는지를 결정한다. 워킹 상태는 명령 속도가 0에 가까워지거나, 지형 조건으로 인해 다른 보행이 필요하거나, 로봇이 균형을 잃거나, 안전 감시기(Safety Monitor)가 비정상적인 동작을 감지할 때 종료될 수 있다. 진입 조건과 종료 조건을 분리하면 모호성을 줄이고 센서 값이 임계값 주변에서 변동할 때 빈번한 상태 전환이 발생하는 것을 방지할 수 있다.
+
+전환 가드(Transition Guard)는 현재 상태와 시스템 정보를 이용하여 평가되는 논리적 조건이다. 예를 들어 워킹에서 트로팅으로 전환하려면 상태 추정 신뢰도와 지형 상태가 허용 가능한 범위에 있는 동안 명령 속도가 일정 시간 이상 특정 임계값을 초과하도록 요구할 수 있다. 가드 조건에 히스테리시스(Hysteresis)를 적용하면 반대 방향의 전환이 서로 다른 임계값에서 발생하도록 하여 하나의 경계 주변에서 반복적인 상태 전환이 발생하는 것을 방지할 수 있다.
+
+히스테리시스는 보행 모드 선택(Gait Mode Selection)에서 특히 중요하다. 워킹에서 트로팅으로 전환하는 임계값과 트로팅에서 워킹으로 전환하는 임계값이 동일하면 작은 속도 변화만으로도 모드가 계속 진동하듯 전환될 수 있다. 서로 다른 임계값을 사용하면 안정적인 운용 영역을 형성할 수 있다. 시간 필터링(Temporal Filtering)이나 최소 체류 시간(Minimum Dwell Time)을 추가하면 물리 시스템이 안정화될 수 있도록 각 모드가 충분한 시간 동안 유지되도록 할 수 있다.
+
+상태 머신은 흔히 계층형 구조(Hierarchical Organization)를 가진다. 최상위 수준에서는 정상 운용(Normal Operation), 복구(Recovery), 고장(Fault) 상태를 구분하고, 정상 운용 내부에는 기립, 워킹, 트로팅 및 특수 지형 이동과 같은 하위 모드를 포함할 수 있다. 계층형 상태 머신(Hierarchical State Machine)은 각각의 보행에 안전 전환을 반복적으로 정의하는 대신 공통 상위 상태에서 정의할 수 있으므로 복잡성을 줄인다.
+
+이동 모드(Locomotion Mode)는 보행 정의(Gait Definition)와 밀접하게 관련되어 있지만 반드시 동일한 것은 아니다. 하나의 이동 모드는 특정 보행과 함께 몸체 높이 설정, 제어기 게인(Controller Gain), 속도 제한, 지형 가정 및 접촉 전략을 포함할 수 있다. 따라서 서로 다른 두 모드가 동일한 기본 보행을 사용하면서 평지, 계단, 경사면 또는 탑재물 운반을 위해 서로 다른 파라미터를 적용할 수 있다.
+
+보행 전환(Gait Transition)은 단순히 하나의 접촉 스케줄을 다른 스케줄로 교체하는 것 이상의 과정이다. 각 다리의 현재 위상, 지지 구성(Support Configuration), 몸체 운동량(Body Momentum), 앞으로 사용할 발 디딤 위치를 함께 고려해야 한다. 위상 관계를 즉시 변경하면 동역학적으로 계획되지 않은 무지지 구간이나 여러 다리가 동시에 움직이는 상황이 발생할 수 있다. 따라서 전환 로직은 시간적 및 물리적 연속성을 함께 조정해야 한다.
+
+위상 인지형 전환(Phase-Aware Transition)은 보행의 현재 진행 상태를 유지하면서 다리 사이의 목표 관계를 점진적으로 변경한다. 워킹에서 트로팅으로 전환할 때 모든 진동자나 타이머를 초기화하는 대신 여러 보행 주기에 걸쳐 위상 오프셋(Phase Offset)을 수정할 수 있다. 이러한 접근법은 스윙 궤적, 지면 반력(Ground Reaction Force), 몸체 가속도의 불연속성을 감소시킨다.
+
+접촉 인지형 전환 로직(Contact-Aware Transition Logic)은 계획된 보행 위상에만 의존하지 않고 실제 측정된 발 접촉을 사용한다. 요청된 전환을 특정 발이 착지할 때까지 또는 안정적인 지지 구성이 형성될 때까지 지연할 수 있다. 이러한 방식은 지형 높이 오차나 순응성 표면(Compliant Surface)으로 인해 실제 접촉 시점이 기준 스케줄과 달라질 수 있는 불규칙 지형에서 특히 유용하다.
+
+속도 명령(Velocity Command) 역시 전환 과정에서 부드럽게 혼합되어야 한다. 하나의 모드에서 사용하는 속도 프로파일을 다른 모드의 속도 프로파일로 즉시 전환하면 큰 가속도 요구가 발생할 수 있다. 명령 필터(Command Filter), 램프(Ramp) 또는 궤적 생성기(Trajectory Generator)를 이용하여 선속도, 요 회전 속도(Yaw Rate), 몸체 높이 및 기타 기준값을 점진적으로 변경하면 하위 수준 제어기에 물리적으로 합리적인 목표를 제공할 수 있다.
+
+제어기 게인(Controller Gain)에도 유사한 보간이 필요할 수 있다. 기립, 워킹 및 동적 주행은 서로 다른 강성(Stiffness), 감쇠(Damping), 추종 가중치 또는 최적화 파라미터를 요구할 수 있다. 목표 자세가 변하지 않더라도 이러한 값을 갑자기 교체하면 토크 불연속성이 발생할 수 있다. 게인 스케줄링(Gain Scheduling)과 부드러운 파라미터 보간(Smooth Parameter Interpolation)을 사용하면 이러한 과도 응답을 줄일 수 있다.
+
+모델 예측 제어(Model Predictive Control, MPC)는 상태 머신의 출력을 이용하여 접촉 스케줄, 비용 함수 가중치, 예측 파라미터 및 이동 한계를 선택할 수 있다. 이동 모드가 변경되면 MPC는 몸체 동역학 최적화를 지속하면서 보행 템플릿이나 기준 궤적을 점진적으로 변경할 수 있다. 따라서 상태 머신은 행동의 맥락(Behavioral Context)을 결정하고, MPC는 해당 맥락 내부에서 동역학적으로 실행 가능한 움직임을 결정한다.
+
+전신 제어(Whole-Body Control, WBC) 역시 모드에 따라 서로 다른 목표를 입력받는다. 기립 상태에서는 모든 발이 정지 상태를 유지하도록 제약하면서 몸통 자세 제어에 높은 우선순위를 부여할 수 있다. 이동 중에는 스윙 발 추종(Swing-Foot Tracking)이 활성화되고 지지 제약이 보행 위상에 따라 변경된다. 복구 또는 조작 모드에서는 전신 작업의 우선순위 구조를 변경하는 추가 목표를 도입할 수 있다.
+
+학습 기반 정책(Learning-Based Policy)도 상태 머신을 통해 조정할 수 있다. 기립, 이동, 계단 등반, 복구 또는 특수 동적 행동을 위한 별도의 정책을 구성할 수 있다. 또는 하나의 명령 조건부 정책(Command-Conditioned Policy)이 여러 모드를 지원하도록 하고 상태 머신이 네트워크에 제공되는 명령 범위, 안전 한계 또는 상황별 파라미터를 결정하도록 구성할 수 있다.
+
+학습된 정책 사이를 전환할 때에는 내부 은닉 상태(Hidden Internal State)를 고려해야 한다. 순환 정책(Recurrent Policy)은 이전 관측값과 행동을 반영하는 메모리를 가질 수 있다. 부적절한 은닉 상태로 이러한 정책을 활성화하면 예측하기 어려운 과도 행동이 발생할 수 있다. 따라서 상태 머신은 명시적인 전환 절차에 따라 순환 상태를 초기화, 재설정 또는 전달할 수 있다.
+
+중추 패턴 생성기(Central Pattern Generator, CPG) 아키텍처는 보행 상태 머신과 자연스럽게 상호작용한다. 상태 머신은 목표 진동자 주파수, 진폭, 듀티 팩터(Duty Factor), 위상 관계를 선택하고 CPG는 연속적인 주기 신호를 생성할 수 있다. 모드가 변경되는 동안 파라미터를 보간하면 진동자 동역학을 이용하여 궤적을 불연속적으로 교체하지 않고 부드러운 전환을 생성할 수 있다.
+
+지형 정보(Terrain Information)는 보행 전환을 자동으로 유발할 수 있다. 평탄한 지형에서는 효율적인 트로팅을 사용할 수 있지만 거친 지형에서는 긴 지지 시간을 갖는 느린 워킹이 더 적합할 수 있다. 계단에서는 전용 스테핑 모드(Stepping Mode)를 활성화하고 미끄러운 표면에서는 속도를 낮추거나 듀티 팩터를 증가시킬 수 있다. 그러나 지형 인지의 불확실성으로 불필요한 전환이 발생하지 않도록 지형 기반 전환에서는 인지 신뢰도도 함께 고려해야 한다.
+
+로봇의 탑재 하중(Payload)도 모드 선택에 영향을 줄 수 있다. 무겁거나 동적으로 움직이는 탑재물을 운반하는 사족보행 로봇은 속도를 낮추고 지지 시간을 늘리며 몸체 가속도를 제한하거나 서로 다른 제어기 게인을 적용해야 할 수 있다. 따라서 탑재 하중 추정값을 이용하여 전환 임계값을 수정하고 현재 질량 구성에 적합하지 않은 공격적인 이동 모드의 사용을 제한할 수 있다.
+
+열 상태(Thermal Condition)와 에너지 상태도 이동 상태에 영향을 줄 수 있다. 모터 온도가 상승하거나 배터리 출력이 제한되는 경우 감독 시스템은 공격적인 이동에서 에너지 절약형 모드(Energy-Conservative Mode)로 전환할 수 있다. 이는 보행 선택이 지형과 속도만으로 결정되는 것이 아니라 실제 로봇의 전체적인 운용 상태를 반영할 수 있음을 보여준다.
+
+복구 상태(Recovery State)는 일반적인 이동 제어기가 제한된 유효 몸체 구성 영역을 중심으로 설계되기 때문에 필수적이다. 로봇이 심한 외란을 받거나 미끄러지거나 넘어지는 경우 정상적인 보행 제어기를 계속 사용하는 것은 효과가 없거나 위험할 수 있다. 복구 상태는 이러한 조건을 감지하고 로봇을 안정적인 자세로 복귀시키기 위한 특수 행동을 활성화한다.
+
+복구 과정 자체도 여러 하위 상태(Substate)를 포함할 수 있다. 로봇은 먼저 정상적인 다리 주기 운동을 중단하고, 몸체 방향을 판단하고, 자기 충돌(Self-Collision)을 방지하도록 다리를 재배치하고, 자세 복원 동작(Righting Maneuver)을 실행한 후 안정적인 기립 상태로 복귀할 수 있다. 상태 추정과 접촉 상태가 다시 신뢰할 수 있는 수준이 된 이후에만 정상 이동 상태로의 전환을 허용해야 한다.
+
+고장 상태(Fault State)는 정상적인 움직임을 통해 안전하게 해결할 수 없는 조건을 나타낼 수 있다는 점에서 복구 상태와 다르다. 통신 손실, 액추에이터 고장, 잘못된 센서 데이터, 과도한 온도 또는 심각한 전원 문제는 즉각적인 제어 정지나 일부 액추에이터의 비활성화를 요구할 수 있다. 일반적으로 고장 전환(Fault Transition)은 성능을 위한 보행 전환보다 높은 우선순위를 가져야 한다.
+
+비상 상태(Emergency State)는 모든 정상적인 전환 규칙을 무시할 수 있다. 중요한 한계값을 초과하면 감독 시스템은 하드웨어를 보호하거나 위험한 움직임을 방지하기 위해 편리한 보행 위상을 기다려서는 안 된다. 시스템 설계에 따라 명령 고정, 토크 감소, 몸체 낮추기, 안전 자세 진입 또는 하드웨어 수준 보호 기능 활성화 등의 동작을 수행할 수 있다.
+
+여러 조건이 동시에 발생하면 전환 우선순위(Transition Priority)가 중요해진다. 내비게이션 모듈이 더 빠른 이동을 요청하는 동시에 안전 감시기가 감속을 요청할 수 있다. 아키텍처는 안전 및 하드웨어 보호가 임무 성능보다 우선하도록 결정론적 우선순위(Deterministic Precedence)를 정의해야 한다. 명확한 우선순위 규칙이 없으면 서로 독립적인 모듈이 상충되는 모드 요청을 생성할 수 있다.
+
+상태 머신 이벤트(State-Machine Event)는 전환 이력이 디버깅에 매우 유용하기 때문에 타임스탬프와 함께 기록되어야 한다. 로그(Log)에는 이전 상태, 새로운 상태, 전환을 발생시킨 조건, 추정된 로봇 상태, 보행 위상, 접촉 상태 및 관련 안전 신호를 기록할 수 있다. 이러한 정보를 이용하면 고장의 원인이 인지, 감독 로직, 연속 제어 또는 실제 물리적 상호작용 중 어디에서 시작되었는지를 분석할 수 있다.
+
+전환 시험(Transition Testing)은 정상적인 모드 전환 순서만을 대상으로 해서는 안 된다. 임계값 근처에서 입력되는 명령, 빠르게 변화하는 속도 요청, 지연된 접촉, 센서 데이터 손실, 지형 분류 변화, 액추에이터 경고 및 여러 전환 조건이 동시에 발생하는 상황을 의도적으로 시험해야 한다. 이러한 경계 조건(Boundary Case)은 일반적인 보행 시연에서는 나타나지 않는 논리적 오류를 발견하는 경우가 많다.
+
+정형 검증(Formal Verification) 기법은 안전이 중요한 전환 로직에 유용할 수 있다. 도달 가능성 분석(Reachability Analysis), 불변 조건 검사(Invariant Checking), 체계적인 상태 전환 시험을 통해 금지된 전환 순서나 안전한 복구가 불가능한 상태를 식별할 수 있다. 연속적인 로봇 동역학은 복잡하지만 감독 로직은 충분히 이산적이므로 그 동작의 일부를 체계적으로 분석할 수 있다.
+
+상태 머신이 세부적인 궤적 제어까지 담당하도록 설계해서는 안 된다. 상태 머신의 목적은 행동을 선택하고 전환 조건을 정의하며 하위 수준 제어기를 구성하는 것이다. 정확한 발 힘, 관절 토크 및 몸체 가속도와 같은 연속적인 물리량은 고주파 피드백을 위해 설계된 MPC, WBC, 임피던스 제어, CPG 또는 학습 정책에서 처리하는 것이 더 적절하다.
+
+피지컬 AI(Physical AI)의 관점에서 이동 상태 머신은 의미론적 의사결정(Semantic Decision)과 연속적인 물리 제어 사이의 중요한 인터페이스를 형성한다. 상위 수준 시스템은 빠르게 이동하기, 조심스럽게 접근하기, 계단 오르기, 정지하기 또는 복구하기와 같은 행동을 요청할 수 있다. 상태 머신은 현재 물리 조건이 요청된 행동을 허용하는지 확인하면서 이러한 의도를 유효한 제어 모드로 변환한다.
+
+이 감독 계층(Supervisory Layer)은 모델 기반 이동과 학습 기반 이동을 결합하기 위한 자연스러운 위치도 제공한다. 서로 다른 상태에서 서로 다른 제어기를 활성화하거나 하나의 상태에서 MPC, WBC, CPG 및 RL을 하이브리드 형태로 결합할 수 있다. 상태 머신은 각각의 기능이 언제 적절한지를 결정하고, 안전 로직은 로봇 상태와 환경 불확실성에 따라 상태 전환을 제한한다.
+
+따라서 강건한 이동 상태 머신 아키텍처(Robust Locomotion State-Machine Architecture)는 명확한 모드 정의, 가드가 적용된 전환(Guarded Transition), 히스테리시스, 위상 및 접촉 인지, 부드러운 명령 혼합, 안전 우선순위, 복구 행동 및 상세한 로그 기록을 결합한다. 이를 연속 제어 계층과 통합하면 사족보행 로봇은 동역학적 연속성과 물리적 안전성을 유지하면서 예측 가능한 방식으로 행동을 전환할 수 있다.
+
+##  
+
+## 02.07. Hardware Abstraction Layer for Quadruped HW [w/Code]
+
+![](images/image7.png){width="7.268055555555556in" height="7.268055555555556in"}
+
+A Hardware Abstraction Layer (HAL) provides a standardized software boundary between quadruped locomotion algorithms and physical hardware. Instead of allowing controllers to communicate directly with individual motors, encoders, inertial sensors, force sensors, or communication buses, the HAL exposes consistent interfaces for commands, measurements, configuration, and diagnostics. This separation reduces hardware dependency throughout the locomotion software stack.
+
+Quadruped hardware is inherently heterogeneous. Actuators may use EtherCAT, CAN, CAN-FD, RS-485, Ethernet, or proprietary communication protocols, while sensors may connect through SPI, I2C, USB, serial links, or network interfaces. The HAL hides these implementation details so that upper-level software operates on standardized robot states and commands rather than device-specific packets and registers.
+
+The primary design objective is to separate control logic from hardware access. Model Predictive Control, Whole-Body Control, reinforcement-learning policies, gait generators, and state machines should not need to know the exact motor driver protocol. They should request quantities such as desired torque, position, velocity, or impedance and receive measurements such as joint angle, velocity, estimated torque, temperature, and fault status.
+
+A joint interface commonly represents each actuator using a consistent data structure. The command side may contain desired position, velocity, feedforward torque, proportional gain, and derivative gain. The feedback side may contain measured position, velocity, current, estimated torque, voltage, temperature, encoder status, and drive faults. Consistent naming and units prevent controller implementations from becoming tied to one actuator vendor.
+
+Unit normalization is an essential HAL responsibility. One motor controller may report angles in encoder counts, another in degrees, and another in radians. Torque may be represented as current, percentage of rated output, or physical newton-meters. The HAL converts these device representations into a canonical set of SI units before data is exposed to estimation and control software.
+
+Coordinate conventions require similar standardization. Joint-positive directions, motor rotations, encoder signs, and mechanical zero positions may differ among legs even when the mechanical structures are symmetric. The HAL applies sign conventions, offsets, and gear-ratio transformations so that upper-level controllers see a consistent kinematic representation of the complete robot.
+
+Joint indexing must remain deterministic across every software component. A controller should know exactly which array element corresponds to the front-left hip, front-left thigh, front-left knee, and equivalent joints on the other legs. The HAL establishes this canonical ordering and maps it to physical actuator addresses, preventing accidental command exchange between joints.
+
+Hardware configuration should be separated from executable control code whenever practical. Motor IDs, gear ratios, torque constants, encoder offsets, joint limits, communication channels, and sensor calibration parameters can be stored in configuration files. The HAL loads and validates these parameters during initialization, allowing one software architecture to support multiple robot revisions with minimal source-code modification.
+
+Initialization is more than opening communication devices. The HAL should verify that expected actuators and sensors are present, communication rates are acceptable, firmware versions are compatible, calibration data is available, and measured states are physically plausible. The robot should not enter active torque control until hardware readiness has been established through a deterministic startup sequence.
+
+Actuator enable and disable procedures require explicit state management. Drives may need to transition through initialization, calibration, standby, enabled, fault, and disabled conditions. The HAL coordinates these states and prevents high-level controllers from sending active commands to hardware that is not ready. Controlled sequencing also reduces unexpected motion during startup and shutdown.
+
+The HAL should distinguish command validity from command transport. A communication link may successfully deliver a packet containing an unsafe or outdated command. Before transmission, the interface can check joint position limits, velocity limits, torque limits, numerical validity, timestamps, and operating mode. Invalid commands can be rejected, clipped, or replaced according to defined safety policy.
+
+Command timeout protection is particularly important for legged robots. If the high-level controller stops updating because of a software crash, network failure, or computation overrun, the actuators must not continue applying the last dynamic command indefinitely. A watchdog mechanism detects stale commands and initiates a predefined fallback such as zero torque, damping mode, controlled posture, or hardware shutdown.
+
+Real-time behavior is a fundamental HAL requirement because locomotion stability depends on predictable command and measurement timing. Hardware reads and writes should occur at deterministic intervals with bounded latency and jitter. Dynamic memory allocation, blocking operations, unpredictable logging, and slow device discovery should be avoided inside high-frequency control paths.
+
+Timestamping allows measurements to be associated with the physical time at which they were acquired. This is essential when joint encoders, IMUs, force sensors, and external perception operate at different frequencies or communication delays. The HAL should preserve hardware timestamps when available or generate consistent host timestamps close to the acquisition boundary.
+
+Time synchronization becomes increasingly important when sensing and control are distributed across multiple processors. An embedded motor controller, onboard computer, perception computer, and external sensor may each maintain an independent clock. Protocols such as Precision Time Protocol (PTP) or hardware synchronization signals can establish a common time base, while the HAL exposes synchronized timestamps to higher-level estimation software.
+
+Sensor abstraction extends beyond joint feedback. An inertial interface can expose orientation-related measurements, angular velocity, linear acceleration, temperature, calibration state, and timing information in a consistent format. Foot-force interfaces can provide normal force, multi-axis force, contact estimates, or raw sensor values while hiding whether the measurement originates from load cells, strain gauges, or actuator torque estimation.
+
+The HAL should preserve access to raw measurements even when processed quantities are available. State estimators may need calibrated physical values, while debugging tools may require raw encoder counts or unfiltered IMU data to identify hardware problems. A layered interface can therefore provide both standardized control data and diagnostic-level device information without mixing their responsibilities.
+
+Contact sensing can be abstracted as a common interface even when different robot versions use different technologies. One platform may have dedicated foot-force sensors, another may infer contact from joint torque, and another may combine both. The HAL can expose contact-related measurements consistently while preserving metadata describing their source, confidence, and validity.
+
+Communication-bus abstraction is another important function. A CAN-based robot and an EtherCAT-based robot can present the same joint interface to locomotion software even though their transport mechanisms differ substantially. Device-specific drivers implement the low-level protocol, while the common HAL interface defines the semantic meaning of commands and feedback.
+
+EtherCAT is attractive for high-performance quadrupeds because it supports deterministic cyclic communication and synchronized distributed devices. CAN and CAN-FD provide simpler and robust networking for many embedded actuator systems. The HAL architecture should not assume that one transport is universally superior; instead, it should isolate transport-specific characteristics behind clearly defined driver interfaces.
+
+A layered HAL often separates device drivers, hardware interfaces, and robot-level abstraction. Device drivers understand registers, packets, and firmware protocols. Hardware interfaces translate device information into standardized actuator or sensor representations. The robot-level layer assembles these components into a complete quadruped model with canonical joints, sensors, timing, and safety status.
+
+This layered organization also supports simulation. A simulated robot can implement the same HAL interface as physical hardware, allowing controllers to run without modification. The simulator supplies joint states and sensor measurements while receiving the same command structures expected by real actuators. This interface equivalence reduces differences between development, simulation, hardware-in-the-loop testing, and deployment.
+
+Hardware-in-the-loop testing can replace selected simulated components with physical devices while preserving the surrounding software architecture. For example, real motor drives can be connected to a test bench while the rest of the robot is simulated. A well-designed HAL makes these substitutions possible because control software interacts with interfaces rather than assuming a particular physical implementation.
+
+Reinforcement-learning deployment benefits strongly from hardware abstraction. A policy trained in simulation expects observations and actions with specific ordering, units, scaling, and timing. The HAL can guarantee that physical joint states are transformed into the same conventions used during training and that policy outputs are converted safely into commands appropriate for the actual actuator system.
+
+Model-based control has similar requirements. MPC and WBC depend on accurate joint positions, velocities, torque capabilities, and contact information. Incorrect gear ratios, sign conventions, or encoder offsets can corrupt the robot model even when the optimization mathematics is correct. The HAL therefore forms part of the physical-model integrity required by advanced locomotion controllers.
+
+Diagnostics should be treated as a first-class interface rather than an afterthought. Actuator temperature, bus error counts, supply voltage, communication latency, sensor validity, packet loss, encoder warnings, and drive faults should be available to supervisory software. These signals allow the locomotion state machine to reduce performance or stop the robot before hardware degradation becomes catastrophic.
+
+Fault handling requires standardized severity and response semantics. A temporary packet loss may justify a warning, while encoder failure or excessive motor temperature may require immediate deactivation. Device-specific fault codes can be translated into common categories so that safety logic does not need separate rules for every actuator or sensor model.
+
+Logging at the HAL boundary provides valuable evidence for debugging because it captures both the commands requested by controllers and the measurements returned by hardware. Timestamped logs can reveal whether instability originated from the controller, communication delay, actuator saturation, sensor corruption, or mechanical response. Efficient binary logging is often preferable in high-frequency loops.
+
+Calibration services can also be integrated into the hardware abstraction architecture. Joint-zero calibration, IMU alignment, force-sensor bias estimation, and actuator identification may require dedicated procedures that should not be embedded inside normal locomotion controllers. The HAL can expose controlled calibration operations and store resulting parameters with version and validity information.
+
+Robot description and HAL configuration should remain consistent. Kinematic models, URDF descriptions, gear ratios, joint limits, actuator orientation, and physical hardware mappings must describe the same machine. Automated startup checks can compare selected parameters and reject configurations that would create dangerous disagreement between the software model and physical robot.
+
+Version management becomes important as hardware evolves. A quadruped may receive new motors, revised gearboxes, different sensors, or updated electronics while retaining much of its locomotion software. Hardware profiles and interface-version definitions allow the HAL to support these variants explicitly rather than accumulating hidden conditional logic throughout control algorithms.
+
+Cybersecurity and command authority should also be considered when hardware interfaces are network accessible. Only authorized processes should be able to issue actuator commands, and diagnostic access should not unintentionally provide control capability. Separation between control, monitoring, configuration, and maintenance interfaces reduces the risk of accidental or unauthorized hardware operation.
+
+For Physical AI, the HAL forms the final software boundary before intelligent decisions become electrical and mechanical actions. High-level reasoning, navigation, learned policies, MPC, and WBC ultimately depend on this layer to deliver commands accurately and return trustworthy physical measurements. Errors at the abstraction boundary can invalidate sophisticated intelligence above it.
+
+A robust quadruped HAL therefore combines standardized actuator and sensor interfaces, canonical units and coordinates, deterministic timing, synchronization, command validation, watchdog protection, diagnostics, calibration, simulation compatibility, and explicit fault handling. By isolating hardware-specific complexity, it enables locomotion software to remain portable while preserving the timing and safety guarantees required for real physical execution.
+
+하드웨어 추상화 계층(Hardware Abstraction Layer, HAL)은 사족보행 로봇의 이동 알고리즘과 실제 하드웨어 사이에 표준화된 소프트웨어 경계를 제공한다. 제어기가 개별 모터, 엔코더, 관성 센서, 힘 센서 또는 통신 버스와 직접 통신하도록 하는 대신 HAL은 명령, 측정값, 구성 및 진단을 위한 일관된 인터페이스를 제공한다. 이러한 분리는 전체 이동 소프트웨어 스택(Locomotion Software Stack)의 하드웨어 의존성을 줄여준다.
+
+사족보행 로봇의 하드웨어는 본질적으로 이기종(Heterogeneous)으로 구성된다. 액추에이터는 이더캣(EtherCAT), CAN, CAN-FD, RS-485, 이더넷(Ethernet) 또는 독자적인 통신 프로토콜을 사용할 수 있으며, 센서는 SPI, I2C, USB, 직렬 통신 또는 네트워크 인터페이스를 통해 연결될 수 있다. HAL은 이러한 구현 세부사항을 숨겨 상위 수준 소프트웨어가 장치별 패킷이나 레지스터가 아니라 표준화된 로봇 상태와 명령을 기반으로 동작하도록 한다.
+
+주요 설계 목적은 제어 로직(Control Logic)과 하드웨어 접근(Hardware Access)을 분리하는 것이다. 모델 예측 제어(Model Predictive Control, MPC), 전신 제어(Whole-Body Control, WBC), 강화학습 정책(Reinforcement-Learning Policy), 보행 생성기(Gait Generator), 상태 머신(State Machine)은 정확한 모터 드라이버 프로토콜을 알 필요가 없어야 한다. 이들은 목표 토크, 위치, 속도 또는 임피던스와 같은 물리량을 요청하고 관절 각도, 속도, 추정 토크, 온도 및 고장 상태와 같은 측정값을 전달받아야 한다.
+
+관절 인터페이스(Joint Interface)는 일반적으로 각각의 액추에이터를 일관된 데이터 구조로 표현한다. 명령 측에는 목표 위치, 속도, 피드포워드 토크(Feedforward Torque), 비례 게인(Proportional Gain), 미분 게인(Derivative Gain)이 포함될 수 있다. 피드백 측에는 측정 위치, 속도, 전류, 추정 토크, 전압, 온도, 엔코더 상태 및 드라이브 고장이 포함될 수 있다. 일관된 명칭과 단위를 사용하면 제어기 구현이 특정 액추에이터 제조사에 종속되는 것을 방지할 수 있다.
+
+단위 정규화(Unit Normalization)는 HAL의 핵심적인 역할이다. 하나의 모터 제어기는 각도를 엔코더 카운트로 제공하고, 다른 제어기는 도(Degree) 단위로 제공하며, 또 다른 제어기는 라디안(Radian)으로 제공할 수 있다. 토크 역시 전류, 정격 출력의 백분율 또는 물리적인 뉴턴미터(Newton-Meter)로 표현될 수 있다. HAL은 이러한 장치별 표현을 상태 추정 및 제어 소프트웨어에 전달하기 전에 표준화된 국제단위계(SI Units)로 변환한다.
+
+좌표 규약(Coordinate Convention)에도 유사한 표준화가 필요하다. 기계 구조가 대칭이더라도 관절의 양의 방향, 모터 회전 방향, 엔코더 부호 및 기계적 영점 위치는 다리마다 다를 수 있다. HAL은 부호 규약, 오프셋 및 기어비 변환을 적용하여 상위 수준 제어기가 전체 로봇에 대해 일관된 운동학적 표현(Kinematic Representation)을 사용할 수 있도록 한다.
+
+관절 인덱싱(Joint Indexing)은 모든 소프트웨어 구성요소에서 결정론적으로 유지되어야 한다. 제어기는 배열의 어떤 요소가 좌측 전방 엉덩이, 좌측 전방 대퇴, 좌측 전방 무릎 및 다른 다리의 대응 관절을 나타내는지 정확하게 알아야 한다. HAL은 이러한 표준 관절 순서를 정의하고 실제 액추에이터 주소와 매핑하여 서로 다른 관절 사이에서 명령이 잘못 전달되는 것을 방지한다.
+
+가능한 경우 하드웨어 구성(Hardware Configuration)은 실행 가능한 제어 코드와 분리해야 한다. 모터 ID, 기어비, 토크 상수, 엔코더 오프셋, 관절 제한, 통신 채널 및 센서 보정 파라미터를 구성 파일(Configuration File)에 저장할 수 있다. HAL은 초기화 과정에서 이러한 파라미터를 로드하고 검증하여 하나의 소프트웨어 아키텍처가 소스 코드 변경을 최소화하면서 여러 로봇 하드웨어 버전을 지원할 수 있도록 한다.
+
+초기화(Initialization)는 단순히 통신 장치를 여는 것 이상의 과정이다. HAL은 예상된 액추에이터와 센서가 존재하는지, 통신 속도가 허용 가능한지, 펌웨어 버전이 호환되는지, 보정 데이터가 존재하는지, 측정 상태가 물리적으로 타당한지를 검증해야 한다. 결정론적인 시작 절차(Deterministic Startup Sequence)를 통해 하드웨어 준비 상태가 확인되기 전에는 로봇이 능동 토크 제어(Active Torque Control)에 진입해서는 안 된다.
+
+액추에이터 활성화 및 비활성화 절차에는 명시적인 상태 관리가 필요하다. 드라이브는 초기화, 보정, 대기, 활성화, 고장 및 비활성화 상태를 거쳐야 할 수 있다. HAL은 이러한 상태를 조정하고 준비되지 않은 하드웨어에 상위 수준 제어기가 능동 명령을 전송하지 못하도록 한다. 제어된 순차 처리(Controlled Sequencing)는 시작 및 종료 과정에서 예상하지 못한 움직임을 줄여준다.
+
+HAL은 명령 유효성(Command Validity)과 명령 전송(Command Transport)을 구분해야 한다. 통신 링크가 안전하지 않거나 오래된 명령을 포함한 패킷을 정상적으로 전달할 수도 있다. 전송 전에 인터페이스는 관절 위치 제한, 속도 제한, 토크 제한, 수치적 유효성, 타임스탬프 및 운용 모드를 검사할 수 있다. 유효하지 않은 명령은 정의된 안전 정책에 따라 거부, 제한 또는 대체할 수 있다.
+
+명령 타임아웃 보호(Command Timeout Protection)는 다족보행 로봇에서 특히 중요하다. 소프트웨어 충돌, 네트워크 장애 또는 계산 시간 초과로 인해 상위 수준 제어기가 명령 갱신을 중단하는 경우 액추에이터가 마지막 동적 명령을 무기한 유지해서는 안 된다. 감시 타이머(Watchdog)는 오래된 명령을 감지하고 제로 토크, 감쇠 모드(Damping Mode), 제어된 자세 또는 하드웨어 종료와 같은 사전에 정의된 대체 동작을 시작한다.
+
+이동 안정성은 예측 가능한 명령 및 측정 타이밍에 의존하기 때문에 실시간 동작(Real-Time Behavior)은 HAL의 기본 요구사항이다. 하드웨어 읽기와 쓰기는 제한된 지연과 지터(Bounded Latency and Jitter)를 갖는 결정론적 주기로 수행되어야 한다. 고주파 제어 경로에서는 동적 메모리 할당, 블로킹 연산, 예측하기 어려운 로그 기록 및 느린 장치 검색을 피해야 한다.
+
+타임스탬프(Timestamp)를 사용하면 측정값을 실제 획득된 물리적 시간과 연결할 수 있다. 이는 관절 엔코더, 관성 측정 장치(Inertial Measurement Unit, IMU), 힘 센서 및 외부 인지 시스템이 서로 다른 주파수 또는 통신 지연으로 동작할 때 필수적이다. HAL은 하드웨어 타임스탬프를 사용할 수 있는 경우 이를 유지하고, 그렇지 않은 경우 데이터 획득 경계에 가까운 시점에서 일관된 호스트 타임스탬프를 생성해야 한다.
+
+센싱과 제어가 여러 프로세서에 분산될수록 시간 동기화(Time Synchronization)는 더욱 중요해진다. 임베디드 모터 제어기, 온보드 컴퓨터, 인지 컴퓨터 및 외부 센서는 각각 독립적인 클록을 유지할 수 있다. 정밀 시간 프로토콜(Precision Time Protocol, PTP)이나 하드웨어 동기화 신호를 통해 공통 시간 기준을 구성할 수 있으며, HAL은 동기화된 타임스탬프를 상위 수준 상태 추정 소프트웨어에 제공한다.
+
+센서 추상화(Sensor Abstraction)는 관절 피드백을 넘어 확장된다. 관성 인터페이스는 자세 관련 측정값, 각속도, 선형 가속도, 온도, 보정 상태 및 시간 정보를 일관된 형식으로 제공할 수 있다. 발 힘 인터페이스(Foot-Force Interface)는 측정 방식이 로드셀, 스트레인 게이지 또는 액추에이터 토크 추정 중 무엇인지 숨기면서 수직력, 다축 힘, 접촉 추정값 또는 원시 센서 값을 제공할 수 있다.
+
+처리된 물리량을 사용할 수 있더라도 HAL은 원시 측정값(Raw Measurement)에 접근할 수 있도록 해야 한다. 상태 추정기는 보정된 물리량이 필요할 수 있지만 디버깅 도구는 하드웨어 문제를 식별하기 위해 원시 엔코더 카운트나 필터링되지 않은 IMU 데이터를 요구할 수 있다. 따라서 계층화된 인터페이스는 각각의 책임을 혼합하지 않으면서 표준화된 제어 데이터와 진단 수준의 장치 정보를 모두 제공할 수 있다.
+
+서로 다른 로봇 버전이 다른 기술을 사용하더라도 접촉 센싱(Contact Sensing)을 공통 인터페이스로 추상화할 수 있다. 하나의 플랫폼은 전용 발 힘 센서를 사용하고 다른 플랫폼은 관절 토크를 통해 접촉을 추정하며 또 다른 플랫폼은 두 방법을 결합할 수 있다. HAL은 접촉 관련 측정값을 일관되게 제공하면서 해당 정보의 출처, 신뢰도 및 유효성을 설명하는 메타데이터를 유지할 수 있다.
+
+통신 버스 추상화(Communication-Bus Abstraction) 역시 중요한 기능이다. CAN 기반 로봇과 EtherCAT 기반 로봇은 전송 메커니즘이 크게 다르지만 이동 소프트웨어에는 동일한 관절 인터페이스를 제공할 수 있다. 장치별 드라이버(Device-Specific Driver)가 하위 수준 프로토콜을 구현하고, 공통 HAL 인터페이스가 명령과 피드백의 의미론적 의미를 정의한다.
+
+이더캣(EtherCAT)은 결정론적 주기 통신과 분산 장치의 동기화를 지원하므로 고성능 사족보행 로봇에 적합하다. CAN과 CAN-FD는 많은 임베디드 액추에이터 시스템에서 보다 단순하고 강건한 네트워킹을 제공한다. HAL 아키텍처는 하나의 전송 방식이 항상 우수하다고 가정해서는 안 되며, 대신 전송 방식별 특성을 명확하게 정의된 드라이버 인터페이스 뒤에 격리해야 한다.
+
+계층화된 HAL은 일반적으로 장치 드라이버(Device Driver), 하드웨어 인터페이스(Hardware Interface), 로봇 수준 추상화(Robot-Level Abstraction)를 분리한다. 장치 드라이버는 레지스터, 패킷 및 펌웨어 프로토콜을 이해한다. 하드웨어 인터페이스는 장치 정보를 표준화된 액추에이터 또는 센서 표현으로 변환한다. 로봇 수준 계층은 이러한 구성요소를 표준 관절, 센서, 타이밍 및 안전 상태를 갖는 완전한 사족보행 로봇 모델로 통합한다.
+
+이러한 계층 구조는 시뮬레이션(Simulation)도 지원한다. 시뮬레이션 로봇은 실제 하드웨어와 동일한 HAL 인터페이스를 구현할 수 있으므로 제어기를 수정하지 않고 실행할 수 있다. 시뮬레이터는 관절 상태와 센서 측정값을 제공하면서 실제 액추에이터에서 사용하는 것과 동일한 명령 구조를 입력받는다. 이러한 인터페이스 동등성(Interface Equivalence)은 개발, 시뮬레이션, 하드웨어 인 더 루프(Hardware-in-the-Loop, HIL) 시험 및 실제 배치 사이의 차이를 줄여준다.
+
+하드웨어 인 더 루프 시험(Hardware-in-the-Loop Testing)은 주변 소프트웨어 아키텍처를 유지하면서 일부 시뮬레이션 구성요소를 실제 장치로 대체할 수 있다. 예를 들어 나머지 로봇은 시뮬레이션하면서 실제 모터 드라이브를 시험 장치에 연결할 수 있다. 잘 설계된 HAL에서는 제어 소프트웨어가 특정 물리적 구현을 가정하지 않고 인터페이스를 통해 상호작용하므로 이러한 대체가 가능하다.
+
+강화학습(Reinforcement Learning)의 실제 배치는 하드웨어 추상화의 이점을 크게 얻는다. 시뮬레이션에서 학습된 정책은 특정한 순서, 단위, 스케일링 및 타이밍을 갖는 관측값과 행동을 예상한다. HAL은 실제 관절 상태가 학습 과정에서 사용한 것과 동일한 규약으로 변환되도록 보장하고, 정책 출력을 실제 액추에이터 시스템에 적합한 안전한 명령으로 변환할 수 있다.
+
+모델 기반 제어(Model-Based Control)도 유사한 요구사항을 가진다. MPC와 WBC는 정확한 관절 위치, 속도, 토크 성능 및 접촉 정보에 의존한다. 기어비, 부호 규약 또는 엔코더 오프셋이 잘못되면 최적화 수학 자체가 정확하더라도 로봇 모델이 잘못될 수 있다. 따라서 HAL은 고급 이동 제어기에 필요한 물리 모델 무결성(Physical-Model Integrity)의 일부를 구성한다.
+
+진단(Diagnostics)은 부가적인 기능이 아니라 핵심 인터페이스로 취급해야 한다. 액추에이터 온도, 버스 오류 횟수, 공급 전압, 통신 지연, 센서 유효성, 패킷 손실, 엔코더 경고 및 드라이브 고장 정보를 감독 소프트웨어에서 사용할 수 있어야 한다. 이러한 신호를 통해 이동 상태 머신은 하드웨어 성능 저하가 치명적인 고장으로 발전하기 전에 성능을 제한하거나 로봇을 정지시킬 수 있다.
+
+고장 처리(Fault Handling)에는 표준화된 심각도(Severity)와 대응 의미 체계가 필요하다. 일시적인 패킷 손실은 경고 수준으로 처리할 수 있지만 엔코더 고장이나 과도한 모터 온도는 즉각적인 비활성화를 요구할 수 있다. 장치별 고장 코드를 공통 범주로 변환하면 안전 로직이 각각의 액추에이터나 센서 모델마다 별도의 규칙을 가질 필요가 없다.
+
+HAL 경계에서의 로그 기록(Logging)은 제어기가 요청한 명령과 하드웨어에서 반환된 측정값을 모두 기록하므로 디버깅을 위한 중요한 증거를 제공한다. 타임스탬프가 포함된 로그를 통해 불안정성이 제어기, 통신 지연, 액추에이터 포화(Actuator Saturation), 센서 데이터 손상 또는 기계적 응답 중 어디에서 발생했는지 분석할 수 있다. 고주파 제어 루프에서는 효율적인 바이너리 로그(Binary Logging)가 더 적합한 경우가 많다.
+
+보정 서비스(Calibration Service) 역시 하드웨어 추상화 아키텍처에 통합할 수 있다. 관절 영점 보정, IMU 정렬, 힘 센서 바이어스 추정 및 액추에이터 식별은 일반적인 이동 제어기에 포함해서는 안 되는 전용 절차를 필요로 할 수 있다. HAL은 제어된 보정 작업을 제공하고 그 결과 파라미터를 버전 및 유효성 정보와 함께 저장할 수 있다.
+
+로봇 기술 정보(Robot Description)와 HAL 구성은 서로 일치해야 한다. 운동학 모델, 통합 로봇 기술 형식(Unified Robot Description Format, URDF), 기어비, 관절 제한, 액추에이터 방향 및 실제 하드웨어 매핑은 동일한 기계를 설명해야 한다. 자동화된 시작 검사(Automated Startup Check)를 통해 주요 파라미터를 비교하고 소프트웨어 모델과 실제 로봇 사이에 위험한 불일치를 발생시키는 구성을 거부할 수 있다.
+
+하드웨어가 발전함에 따라 버전 관리(Version Management)가 중요해진다. 사족보행 로봇은 이동 소프트웨어의 대부분을 유지하면서 새로운 모터, 변경된 기어박스, 다른 센서 또는 업데이트된 전자 장치를 적용할 수 있다. 하드웨어 프로파일(Hardware Profile)과 인터페이스 버전 정의를 사용하면 제어 알고리즘 전체에 숨겨진 조건문을 누적시키지 않고 이러한 변형을 명시적으로 지원할 수 있다.
+
+하드웨어 인터페이스가 네트워크를 통해 접근 가능한 경우 사이버 보안(Cybersecurity)과 명령 권한(Command Authority)도 고려해야 한다. 승인된 프로세스만 액추에이터 명령을 전송할 수 있어야 하며 진단 접근 권한이 의도하지 않게 제어 권한까지 제공해서는 안 된다. 제어, 모니터링, 구성 및 유지보수 인터페이스를 분리하면 우발적이거나 승인되지 않은 하드웨어 동작의 위험을 줄일 수 있다.
+
+피지컬 AI(Physical AI)의 관점에서 HAL은 지능적인 의사결정이 전기적·기계적 행동으로 변환되기 직전의 최종 소프트웨어 경계를 형성한다. 상위 수준 추론, 내비게이션, 학습 정책, MPC 및 WBC는 궁극적으로 이 계층이 명령을 정확하게 전달하고 신뢰할 수 있는 물리적 측정값을 반환하는 것에 의존한다. 추상화 경계에서 발생하는 오류는 그 상위에 위치한 정교한 지능 시스템 전체의 유효성을 손상시킬 수 있다.
+
+따라서 강건한 사족보행 로봇 HAL(Robust Quadruped HAL)은 표준화된 액추에이터 및 센서 인터페이스, 표준 단위와 좌표계, 결정론적 타이밍, 시간 동기화, 명령 검증, 감시 타이머 보호, 진단, 보정, 시뮬레이션 호환성 및 명시적인 고장 처리를 통합해야 한다. 하드웨어별 복잡성을 격리함으로써 실제 물리적 실행에 필요한 타이밍 및 안전 보장을 유지하면서 이동 소프트웨어의 이식성(Portability)을 확보할 수 있다.
+
+##  
+
+## 02.08. Real Time Control Loop 1kHz Architecture [w/Code]
+
+![](images/image8.png){width="7.268055555555556in" height="7.268055555555556in"}
+
+A 1 kHz real-time control loop provides the deterministic execution layer required for high-performance quadruped locomotion. At this frequency, the controller completes one sensing, computation, and actuation cycle every 1 millisecond. The objective is not simply to execute software quickly, but to guarantee that critical control operations occur within predictable timing bounds despite concurrent perception, communication, logging, and planning workloads.
+
+The 1 millisecond control period defines a strict computational budget. Within each cycle, the system must acquire hardware measurements, update robot state, calculate control commands, validate outputs, and transmit commands to the actuators. Any computation that cannot reliably satisfy this deadline should normally be moved outside the hard real-time loop or executed at a slower rate.
+
+A typical cycle begins by reading joint encoders, actuator states, inertial measurements, force information, and hardware diagnostics through the Hardware Abstraction Layer (HAL). These measurements should carry consistent timestamps and units so that the control algorithm operates on a coherent representation of the physical robot. Stale, incomplete, or invalid measurements must be detected before they influence actuator commands.
+
+State estimation transforms raw measurements into quantities required by locomotion control. Joint positions and velocities are combined with IMU measurements, contact information, and robot kinematics to estimate base orientation, angular velocity, body velocity, and other dynamic states. The estimator may execute directly at 1 kHz or provide its latest synchronized result through a real-time-safe interface.
+
+The control computation depends on the selected locomotion architecture. A Whole-Body Controller may solve for joint torques from body, contact, and swing-leg objectives, while a lower-level impedance controller may calculate torque from desired position and velocity references. The 1 kHz loop should contain only computations whose worst-case execution time is compatible with the available deadline.
+
+Not every locomotion algorithm must operate at 1 kHz. Model Predictive Control may execute at tens or hundreds of hertz because its optimization horizon is computationally expensive, while gait planning, terrain perception, reinforcement-learning inference, and navigation may use still lower frequencies. Their latest outputs can be consumed by the 1 kHz servo layer through carefully designed asynchronous interfaces.
+
+This creates a multi-rate control architecture. Navigation may update desired velocity slowly, terrain perception may update environmental information at camera or LiDAR frequency, MPC may periodically update force or trajectory references, and the real-time loop continuously tracks the latest valid references. Each layer operates at a rate appropriate to its physical bandwidth and computational requirements.
+
+The separation between hard real-time and non-real-time computation is fundamental. Hard real-time code must meet every required deadline, whereas non-real-time components can tolerate moderate scheduling variation. Graphical interfaces, file operations, network services, model loading, database access, and general-purpose logging should never be allowed to block the high-frequency actuator loop.
+
+A real-time operating environment reduces scheduling uncertainty. Real-time Linux with PREEMPT_RT, dedicated real-time threads, or an RTOS can provide bounded scheduling latency when properly configured. The operating system alone is not sufficient, however; application software must also avoid unpredictable operations and follow deterministic memory, synchronization, and communication practices.
+
+The main control thread is commonly assigned a high real-time scheduling priority. Lower-priority tasks handle telemetry, visualization, configuration, diagnostics, and other noncritical operations. Priority assignment must be designed carefully because incorrect synchronization can produce priority inversion, allowing a low-priority task to delay a time-critical control operation.
+
+CPU affinity can isolate the control thread on a dedicated processor core. This reduces interference from unrelated tasks and improves timing consistency. Interrupt affinity may also be configured so that communication and device interrupts are processed predictably. The objective is to reduce jitter rather than merely increase average computational throughput.
+
+Dynamic memory allocation should generally be avoided inside the 1 kHz loop. Allocation and deallocation can introduce unpredictable latency because their execution time depends on memory state and allocator behavior. Buffers, matrices, messages, and solver workspaces should therefore be preallocated during initialization whenever possible.
+
+Blocking synchronization is another major source of timing uncertainty. A real-time thread should not wait indefinitely for a mutex held by a non-real-time process. Lock-free queues, double buffering, atomic variables, real-time-safe ring buffers, or carefully bounded synchronization mechanisms are commonly used to exchange information between control and slower software components.
+
+Double buffering is particularly useful for multi-rate references. A slower planner writes a complete new trajectory or parameter set into an inactive buffer and atomically makes it available after the update is complete. The real-time thread continues using the previous valid data until the new buffer is ready, preventing partially updated structures from entering the control calculation.
+
+Communication with actuators must also satisfy deterministic timing requirements. EtherCAT is frequently used for high-rate legged-robot control because cyclic process data can be exchanged with predictable latency. CAN-FD or other buses can also be used when their bandwidth, topology, and timing characteristics satisfy the number of actuators and required update frequency.
+
+Distributed clocks and synchronized communication help ensure that measurements from multiple actuator drives correspond to a consistent physical instant. Without synchronization, sequentially sampled joints can represent slightly different robot configurations. At high dynamic speeds, even small temporal inconsistencies can degrade state estimation and whole-body control accuracy.
+
+The real-time loop should distinguish the nominal period from actual execution timing. Every cycle can record its wake-up time, computation duration, communication duration, and completion time. These measurements allow engineers to characterize average latency, worst-case execution time, jitter, and deadline misses rather than assuming that a nominal 1 kHz timer guarantees real-time performance.
+
+Worst-case execution time is more important than average execution time for safety-critical control. A controller that usually completes in 300 microseconds but occasionally requires 1.5 milliseconds cannot reliably satisfy a 1 kHz deadline. Timing validation must therefore examine long-duration operation, computational peaks, communication disturbances, and simultaneous background workloads.
+
+Deadline monitoring should be integrated into the runtime architecture. If a cycle exceeds its allowed execution time, the system can increment an overrun counter, record diagnostic information, and determine whether the event is isolated or persistent. Repeated deadline misses may trigger reduced control complexity, a lower-performance locomotion mode, controlled stopping, or another safety response.
+
+A watchdog provides protection against complete control-loop failure. Hardware or an independent software component monitors whether the control process continues to update within an expected interval. If the process crashes, deadlocks, or stops producing valid commands, the watchdog initiates a predefined actuator response rather than allowing the last command to remain active indefinitely.
+
+Command validation is performed before actuator transmission. Joint torque, position, velocity, and impedance parameters should remain within hardware and configuration limits. Numerical checks should reject NaN or infinite values, while rate limiters can prevent unrealistic command discontinuities. This final validation stage provides a safety boundary between control computation and physical actuation.
+
+Torque saturation requires careful handling because simply clipping commands can alter the behavior assumed by the controller. If a Whole-Body Controller repeatedly requests torque beyond actuator capability, the system should expose saturation information to supervisory logic. Persistent saturation may indicate excessive velocity commands, poor contact assumptions, payload errors, or a controller operating outside its valid region.
+
+Sensor validity should be monitored at the same rate whenever practical. Encoder discontinuities, impossible joint velocities, IMU saturation, missing packets, or inconsistent actuator timestamps can indicate corrupted feedback. Depending on severity, the loop may retain the last valid value briefly, switch to an alternative estimate, reduce performance, or enter a safe state.
+
+The real-time loop interacts closely with the locomotion state machine. Different modes can select different control objectives, gains, contact assumptions, and command limits, but mode changes should be communicated without introducing discontinuities. The high-frequency layer executes the currently authorized mode while supervisory logic determines when transitions are permitted.
+
+Gait phase and contact state often require high-frequency updates even when the gait planner itself runs more slowly. The servo loop can advance phase variables, detect touchdown or liftoff events, and apply the latest swing or stance references. This enables rapid reaction to physical contact while preserving the slower planning architecture above it.
+
+Model Predictive Control can operate asynchronously from the servo loop. MPC periodically computes future body trajectories, contact forces, or other optimized references and publishes the latest valid solution. The 1 kHz controller interpolates or tracks these references until a new solution becomes available, avoiding the need to solve the full optimization problem every millisecond.
+
+Whole-Body Control may operate at the full servo frequency when its optimization problem is sufficiently small and deterministic. Quadratic-programming matrices can be preallocated, sparsity structures reused, and warm starts applied to reduce computation time. Solver iteration limits should be bounded so that occasional difficult optimization problems cannot consume unlimited real-time execution time.
+
+If an optimization problem becomes infeasible, the real-time architecture needs a deterministic fallback. The controller may relax selected noncritical objectives, reuse a previous feasible solution briefly, switch to an impedance-based command, or request a safer locomotion state. Failure handling should be designed in advance rather than relying on undefined solver behavior.
+
+Reinforcement-learning policies are commonly executed at a lower frequency than the motor servo loop. A policy may generate desired joint positions, residual actions, gait parameters, or latent commands that remain valid across several 1 kHz cycles. The servo controller then interpolates and tracks these outputs while enforcing torque, position, velocity, and safety constraints.
+
+Policy inference timing must still be bounded even when it is asynchronous. GPU scheduling, memory transfer, model execution, and preprocessing can introduce variable latency. The real-time loop should never wait synchronously for neural inference. Instead, it should continue using the latest valid policy output and detect when that output becomes too old to trust.
+
+Logging must be designed so that observability does not compromise determinism. The real-time thread can write compact telemetry records into a preallocated ring buffer, while a lower-priority process transfers them to storage. This permits high-rate recording of commands, measurements, timing statistics, contact states, and faults without performing file I/O inside the servo cycle.
+
+Clock synchronization is essential when control data must be correlated with cameras, LiDAR, external computers, or distributed processors. Precision Time Protocol (PTP), synchronized hardware clocks, or trigger signals can establish a shared time reference. The 1 kHz loop can then relate fast proprioceptive measurements to slower perception data with known temporal alignment.
+
+Startup and shutdown require deterministic sequencing. Before the loop begins active control, memory should be allocated, hardware communication established, sensors validated, actuator states confirmed, and initial robot state checked. During shutdown, commands should transition toward a defined safe behavior before drives are disabled, rather than terminating the control process abruptly.
+
+Performance validation should measure timing under realistic worst-case conditions. Tests should include full telemetry, perception workloads, network traffic, optimization activity, policy inference, and hardware communication while the control loop runs continuously. Stress testing reveals interference that may not appear when the servo process is evaluated in isolation.
+
+Software-in-the-loop and hardware-in-the-loop testing can verify real-time behavior before unrestricted robot operation. Artificial delays, dropped packets, solver overruns, sensor corruption, and CPU load can be injected deliberately. The expected result is not merely continued operation, but predictable detection and transition toward defined fallback behavior.
+
+For quadruped Physical AI, the 1 kHz loop is the point where high-level intelligence is converted into tightly timed physical interaction. Navigation, terrain reasoning, learned policies, and planning can operate at slower semantic timescales, while the servo layer continuously maintains contact forces, joint behavior, and body stabilization at the mechanical timescale of the robot.
+
+A robust 1 kHz architecture therefore depends on deterministic scheduling, bounded computation, preallocated memory, real-time-safe communication, multi-rate interfaces, synchronized sensing, deadline monitoring, watchdog protection, command validation, and predefined fallback behavior. The value of the architecture lies not in the numerical frequency alone, but in guaranteeing predictable physical control every millisecond.
+
+1 kHz 실시간 제어 루프(Real-Time Control Loop)는 고성능 사족보행 이동(Quadruped Locomotion)에 필요한 결정론적 실행 계층(Deterministic Execution Layer)을 제공한다. 이 주파수에서 제어기는 매 1밀리초마다 센싱, 계산 및 구동으로 이루어진 하나의 제어 주기를 완료한다. 목적은 단순히 소프트웨어를 빠르게 실행하는 것이 아니라 인지, 통신, 로깅 및 계획 작업이 동시에 수행되는 상황에서도 핵심 제어 연산이 예측 가능한 시간 범위 내에서 수행되도록 보장하는 것이다.
+
+1밀리초의 제어 주기(Control Period)는 엄격한 계산 시간 예산(Computational Budget)을 정의한다. 각 주기 내에서 시스템은 하드웨어 측정값을 획득하고, 로봇 상태를 갱신하고, 제어 명령을 계산하고, 출력을 검증한 후 액추에이터에 명령을 전송해야 한다. 이 마감시간(Deadline)을 안정적으로 만족할 수 없는 계산은 일반적으로 하드 실시간 루프(Hard Real-Time Loop) 외부로 이동시키거나 더 낮은 주파수에서 실행해야 한다.
+
+일반적인 제어 주기는 하드웨어 추상화 계층(Hardware Abstraction Layer, HAL)을 통해 관절 엔코더, 액추에이터 상태, 관성 측정값, 힘 정보 및 하드웨어 진단 정보를 읽는 것으로 시작한다. 이러한 측정값은 일관된 타임스탬프와 단위를 가져야 하며, 이를 통해 제어 알고리즘이 실제 로봇을 일관된 형태로 표현할 수 있다. 오래되거나 불완전하거나 유효하지 않은 측정값은 액추에이터 명령에 영향을 주기 전에 감지되어야 한다.
+
+상태 추정(State Estimation)은 원시 측정값을 이동 제어에 필요한 물리량으로 변환한다. 관절 위치와 속도는 관성 측정 장치(Inertial Measurement Unit, IMU), 접촉 정보 및 로봇 운동학과 결합되어 베이스 자세, 각속도, 몸체 속도 및 기타 동적 상태를 추정한다. 상태 추정기는 직접 1 kHz로 실행되거나 실시간 안전 인터페이스(Real-Time-Safe Interface)를 통해 가장 최근에 동기화된 결과를 제공할 수 있다.
+
+제어 계산(Control Computation)은 선택된 이동 아키텍처에 따라 달라진다. 전신 제어기(Whole-Body Controller, WBC)는 몸체, 접촉 및 스윙 다리 목표를 기반으로 관절 토크를 계산할 수 있으며, 하위 수준 임피던스 제어기(Impedance Controller)는 목표 위치와 속도 기준값으로부터 토크를 계산할 수 있다. 1 kHz 루프에는 최악 조건 실행 시간(Worst-Case Execution Time)이 사용 가능한 마감시간과 호환되는 계산만 포함해야 한다.
+
+모든 이동 알고리즘이 반드시 1 kHz에서 동작해야 하는 것은 아니다. 모델 예측 제어(Model Predictive Control, MPC)는 최적화 구간 계산에 많은 연산이 필요하기 때문에 수십 또는 수백 헤르츠로 실행할 수 있으며, 보행 계획, 지형 인지, 강화학습 추론 및 내비게이션은 이보다 더 낮은 주파수로 동작할 수 있다. 이러한 모듈의 최신 출력은 신중하게 설계된 비동기 인터페이스(Asynchronous Interface)를 통해 1 kHz 서보 계층(Servo Layer)에서 사용할 수 있다.
+
+이를 통해 다중 주파수 제어 아키텍처(Multi-Rate Control Architecture)가 형성된다. 내비게이션은 목표 속도를 비교적 느리게 갱신하고, 지형 인지는 카메라 또는 라이다(LiDAR) 주파수에 맞추어 환경 정보를 갱신하며, MPC는 주기적으로 힘이나 궤적 기준값을 갱신하고, 실시간 루프는 가장 최근의 유효한 기준값을 지속적으로 추종한다. 각 계층은 해당 물리적 대역폭과 계산 요구사항에 적합한 주파수로 동작한다.
+
+하드 실시간 계산(Hard Real-Time Computation)과 비실시간 계산(Non-Real-Time Computation)의 분리는 매우 중요하다. 하드 실시간 코드는 요구되는 모든 마감시간을 만족해야 하지만 비실시간 구성요소는 일정 수준의 스케줄링 변동을 허용할 수 있다. 그래픽 인터페이스, 파일 연산, 네트워크 서비스, 모델 로딩, 데이터베이스 접근 및 범용 로깅이 고주파 액추에이터 루프를 차단하도록 해서는 안 된다.
+
+실시간 운영 환경(Real-Time Operating Environment)은 스케줄링 불확실성을 감소시킨다. PREEMPT_RT가 적용된 실시간 리눅스(Real-Time Linux), 전용 실시간 스레드 또는 실시간 운영체제(Real-Time Operating System, RTOS)는 적절하게 구성되었을 때 제한된 스케줄링 지연을 제공할 수 있다. 그러나 운영체제만으로 충분하지 않으며, 응용 소프트웨어 역시 예측하기 어려운 연산을 피하고 결정론적인 메모리, 동기화 및 통신 방식을 따라야 한다.
+
+주 제어 스레드(Main Control Thread)에는 일반적으로 높은 실시간 스케줄링 우선순위가 할당된다. 낮은 우선순위의 작업은 텔레메트리, 시각화, 구성, 진단 및 기타 비핵심 연산을 처리한다. 잘못된 동기화는 낮은 우선순위 작업이 시간적으로 중요한 제어 연산을 지연시키는 우선순위 역전(Priority Inversion)을 발생시킬 수 있으므로 우선순위 할당은 신중하게 설계해야 한다.
+
+CPU 어피니티(CPU Affinity)를 사용하면 제어 스레드를 전용 프로세서 코어에 격리할 수 있다. 이를 통해 관련 없는 작업의 간섭을 줄이고 타이밍 일관성을 향상시킬 수 있다. 통신 및 장치 인터럽트가 예측 가능한 방식으로 처리되도록 인터럽트 어피니티(Interrupt Affinity)도 설정할 수 있다. 목적은 단순히 평균 계산 처리량을 증가시키는 것이 아니라 지터(Jitter)를 감소시키는 것이다.
+
+동적 메모리 할당(Dynamic Memory Allocation)은 일반적으로 1 kHz 루프 내부에서 피해야 한다. 메모리 상태와 할당기 동작에 따라 할당 및 해제 시간이 달라질 수 있으므로 예측하기 어려운 지연이 발생할 수 있다. 따라서 버퍼, 행렬, 메시지 및 솔버 작업 공간(Solver Workspace)은 가능한 경우 초기화 단계에서 미리 할당(Preallocation)해야 한다.
+
+블로킹 동기화(Blocking Synchronization) 역시 타이밍 불확실성의 주요 원인이다. 실시간 스레드는 비실시간 프로세스가 보유한 뮤텍스(Mutex)를 무기한 기다려서는 안 된다. 제어 계층과 느린 소프트웨어 구성요소 사이에서 정보를 교환하기 위해 잠금 없는 큐(Lock-Free Queue), 이중 버퍼링(Double Buffering), 원자 변수(Atomic Variable), 실시간 안전 링 버퍼(Real-Time-Safe Ring Buffer) 또는 제한된 동기화 메커니즘을 사용할 수 있다.
+
+이중 버퍼링은 다중 주파수 기준값을 처리할 때 특히 유용하다. 느린 계획기가 완전한 새로운 궤적이나 파라미터 집합을 비활성 버퍼에 기록하고 갱신이 완료되면 이를 원자적으로 사용할 수 있도록 전환한다. 실시간 스레드는 새로운 버퍼가 준비될 때까지 이전의 유효한 데이터를 계속 사용하므로 부분적으로만 갱신된 데이터 구조가 제어 계산에 입력되는 것을 방지할 수 있다.
+
+액추에이터와의 통신 역시 결정론적인 타이밍 요구사항을 만족해야 한다. 이더캣(EtherCAT)은 주기적 프로세스 데이터를 예측 가능한 지연으로 교환할 수 있기 때문에 고속 다족보행 로봇 제어에 자주 사용된다. CAN-FD 또는 다른 버스 역시 대역폭, 네트워크 토폴로지 및 타이밍 특성이 액추에이터 수와 요구되는 갱신 주파수를 만족한다면 사용할 수 있다.
+
+분산 클록(Distributed Clock)과 동기화된 통신은 여러 액추에이터 드라이브의 측정값이 일관된 물리적 시점에 대응하도록 한다. 동기화가 이루어지지 않으면 순차적으로 샘플링된 관절들이 조금씩 다른 시점의 로봇 구성을 나타낼 수 있다. 동적 움직임이 빠른 경우 이러한 작은 시간적 불일치도 상태 추정과 전신 제어 정확도를 저하시킬 수 있다.
+
+실시간 루프는 기준 주기(Nominal Period)와 실제 실행 타이밍(Actual Execution Timing)을 구분해야 한다. 각 주기에서 기상 시각(Wake-Up Time), 계산 시간, 통신 시간 및 완료 시각을 기록할 수 있다. 이러한 측정을 통해 명목상 1 kHz 타이머가 실시간 성능을 보장한다고 가정하는 대신 평균 지연, 최악 조건 실행 시간, 지터 및 마감시간 초과를 실제로 분석할 수 있다.
+
+안전이 중요한 제어에서는 평균 실행 시간보다 최악 조건 실행 시간이 더 중요하다. 일반적으로 300마이크로초 안에 완료되지만 간헐적으로 1.5밀리초가 필요한 제어기는 1 kHz 마감시간을 안정적으로 만족할 수 없다. 따라서 타이밍 검증(Timing Validation)은 장시간 운용, 계산 부하의 피크, 통신 외란 및 여러 백그라운드 작업이 동시에 실행되는 조건을 포함해야 한다.
+
+마감시간 감시(Deadline Monitoring)는 런타임 아키텍처에 통합되어야 한다. 특정 주기가 허용된 실행 시간을 초과하면 시스템은 오버런 카운터(Overrun Counter)를 증가시키고 진단 정보를 기록하여 해당 현상이 일시적인지 지속적인지를 판단할 수 있다. 반복적인 마감시간 초과는 제어 복잡도 감소, 저성능 이동 모드로의 전환, 제어된 정지 또는 다른 안전 대응을 유발할 수 있다.
+
+감시 타이머(Watchdog)는 제어 루프가 완전히 실패하는 상황에 대한 보호 기능을 제공한다. 하드웨어 또는 독립적인 소프트웨어 구성요소는 제어 프로세스가 예상된 시간 간격 내에서 계속 갱신되는지를 감시한다. 프로세스가 충돌하거나 교착 상태(Deadlock)에 빠지거나 유효한 명령 생성을 중단하면 마지막 명령이 무기한 유지되지 않도록 감시 타이머가 사전에 정의된 액추에이터 대응을 시작한다.
+
+명령 검증(Command Validation)은 액추에이터로 명령을 전송하기 전에 수행된다. 관절 토크, 위치, 속도 및 임피던스 파라미터는 하드웨어와 구성에서 정의한 제한 범위 내에 있어야 한다. 수치 검사를 통해 비수(Not-a-Number, NaN) 또는 무한대 값을 거부하고 변화율 제한기(Rate Limiter)를 통해 비현실적인 명령 불연속성을 방지할 수 있다. 이러한 최종 검증 단계는 제어 계산과 실제 구동 사이의 안전 경계를 제공한다.
+
+토크 포화(Torque Saturation)는 단순히 명령을 제한하는 것만으로는 제어기가 가정한 동작을 변화시킬 수 있으므로 신중하게 처리해야 한다. 전신 제어기가 액추에이터 성능을 초과하는 토크를 반복적으로 요구한다면 시스템은 포화 정보를 감독 로직에 제공해야 한다. 지속적인 포화는 과도한 속도 명령, 잘못된 접촉 가정, 탑재 하중 오류 또는 제어기가 유효 운용 영역을 벗어났음을 의미할 수 있다.
+
+가능한 경우 센서 유효성(Sensor Validity)도 동일한 주파수에서 감시해야 한다. 엔코더 불연속, 물리적으로 불가능한 관절 속도, IMU 포화, 누락된 패킷 또는 일관되지 않은 액추에이터 타임스탬프는 손상된 피드백을 나타낼 수 있다. 심각도에 따라 루프는 마지막 유효 값을 짧은 시간 유지하거나 대체 추정값을 사용하거나 성능을 제한하거나 안전 상태로 전환할 수 있다.
+
+실시간 루프는 이동 상태 머신(Locomotion State Machine)과 밀접하게 상호작용한다. 서로 다른 모드는 서로 다른 제어 목표, 게인, 접촉 가정 및 명령 제한을 선택할 수 있지만 모드 변경은 불연속성을 발생시키지 않는 방식으로 전달되어야 한다. 고주파 계층은 현재 승인된 모드를 실행하고 감독 로직(Supervisory Logic)은 언제 상태 전환을 허용할 것인지를 결정한다.
+
+보행 계획기 자체가 더 낮은 주파수에서 실행되더라도 보행 위상(Gait Phase)과 접촉 상태(Contact State)는 고주파로 갱신해야 하는 경우가 많다. 서보 루프는 위상 변수를 진행시키고 착지(Touchdown) 또는 이지(Liftoff) 이벤트를 감지하며 최신 스윙 또는 지지 기준값을 적용할 수 있다. 이를 통해 상위의 느린 계획 구조를 유지하면서 실제 물리적 접촉에 빠르게 대응할 수 있다.
+
+모델 예측 제어(Model Predictive Control, MPC)는 서보 루프와 비동기적으로 동작할 수 있다. MPC는 주기적으로 미래 몸체 궤적, 접촉력 또는 기타 최적화된 기준값을 계산하여 가장 최근의 유효한 해를 제공한다. 1 kHz 제어기는 새로운 해가 제공될 때까지 이러한 기준값을 보간하거나 추종하므로 매 1밀리초마다 전체 최적화 문제를 풀 필요가 없다.
+
+전신 제어(Whole-Body Control, WBC)는 최적화 문제가 충분히 작고 결정론적으로 계산될 수 있다면 전체 서보 주파수에서 실행할 수 있다. 이차 계획법(Quadratic Programming, QP)의 행렬을 미리 할당하고 희소 구조(Sparsity Structure)를 재사용하며 웜 스타트(Warm Start)를 적용하여 계산 시간을 줄일 수 있다. 솔버 반복 횟수에 제한을 두어 간헐적으로 어려운 최적화 문제가 실시간 실행 시간을 무제한으로 소비하지 않도록 해야 한다.
+
+최적화 문제가 실행 불가능 상태(Infeasible)가 되는 경우 실시간 아키텍처에는 결정론적인 대체 동작(Deterministic Fallback)이 필요하다. 제어기는 중요도가 낮은 일부 목표를 완화하거나 이전의 실행 가능한 해를 짧은 시간 동안 재사용하거나 임피던스 기반 명령으로 전환하거나 보다 안전한 이동 상태를 요청할 수 있다. 고장 처리는 정의되지 않은 솔버 동작에 의존하지 않고 사전에 설계되어야 한다.
+
+강화학습 정책(Reinforcement-Learning Policy)은 일반적으로 모터 서보 루프보다 낮은 주파수에서 실행된다. 정책은 여러 번의 1 kHz 제어 주기 동안 유효한 목표 관절 위치, 잔차 행동(Residual Action), 보행 파라미터 또는 잠재 명령(Latent Command)을 생성할 수 있다. 이후 서보 제어기는 토크, 위치, 속도 및 안전 제약을 적용하면서 이러한 출력을 보간하고 추종한다.
+
+정책 추론(Policy Inference)이 비동기적으로 실행되더라도 추론 시간은 제한되어야 한다. GPU 스케줄링, 메모리 전송, 모델 실행 및 전처리 과정은 가변적인 지연을 발생시킬 수 있다. 실시간 루프는 신경망 추론 결과를 동기적으로 기다려서는 안 된다. 대신 가장 최근의 유효한 정책 출력을 계속 사용하면서 해당 출력이 신뢰하기 어려울 정도로 오래되었는지를 감지해야 한다.
+
+로깅(Logging)은 시스템 관측 가능성(Observability)이 결정론적 실행을 방해하지 않도록 설계해야 한다. 실시간 스레드는 미리 할당된 링 버퍼에 압축된 텔레메트리 레코드를 기록하고 낮은 우선순위 프로세스가 이를 저장장치로 전송하도록 구성할 수 있다. 이를 통해 서보 주기 내부에서 파일 입출력을 수행하지 않으면서 명령, 측정값, 타이밍 통계, 접촉 상태 및 고장 정보를 고주파로 기록할 수 있다.
+
+제어 데이터를 카메라, 라이다, 외부 컴퓨터 또는 분산 프로세서의 데이터와 연계해야 하는 경우 클록 동기화(Clock Synchronization)가 필수적이다. 정밀 시간 프로토콜(Precision Time Protocol, PTP), 동기화된 하드웨어 클록 또는 트리거 신호를 이용하여 공유 시간 기준을 구성할 수 있다. 이를 통해 1 kHz 루프는 빠른 고유수용성 측정(Proprioceptive Measurement)과 느린 인지 데이터를 알려진 시간 관계에 따라 정렬할 수 있다.
+
+시작 및 종료(Startup and Shutdown) 과정에는 결정론적인 순차 처리가 필요하다. 루프가 능동 제어를 시작하기 전에 메모리 할당, 하드웨어 통신 설정, 센서 검증, 액추에이터 상태 확인 및 초기 로봇 상태 검사가 완료되어야 한다. 종료 과정에서는 제어 프로세스를 갑자기 종료하는 대신 드라이브를 비활성화하기 전에 명령이 정의된 안전 행동으로 점진적으로 전환되어야 한다.
+
+성능 검증(Performance Validation)은 현실적인 최악 조건에서 타이밍을 측정해야 한다. 제어 루프가 지속적으로 실행되는 동안 전체 텔레메트리, 인지 작업 부하, 네트워크 트래픽, 최적화 계산, 정책 추론 및 하드웨어 통신을 함께 활성화하여 시험해야 한다. 스트레스 시험(Stress Testing)은 서보 프로세스만 독립적으로 평가할 때 발견되지 않는 간섭 문제를 드러낼 수 있다.
+
+소프트웨어 인 더 루프(Software-in-the-Loop, SIL)와 하드웨어 인 더 루프(Hardware-in-the-Loop, HIL) 시험을 통해 실제 로봇의 제한 없는 운용 전에 실시간 동작을 검증할 수 있다. 인위적인 지연, 패킷 손실, 솔버 오버런, 센서 데이터 손상 및 CPU 부하를 의도적으로 주입할 수 있다. 기대되는 결과는 단순히 계속 동작하는 것이 아니라 문제를 예측 가능하게 감지하고 정의된 대체 행동으로 전환하는 것이다.
+
+사족보행 피지컬 AI(Quadruped Physical AI)의 관점에서 1 kHz 루프는 상위 수준 지능이 엄격한 시간 제약을 갖는 물리적 상호작용으로 변환되는 지점이다. 내비게이션, 지형 추론, 학습 정책 및 계획은 더 느린 의미론적 시간 척도(Semantic Timescale)에서 동작할 수 있지만 서보 계층은 로봇의 기계적 시간 척도에서 접촉력, 관절 동작 및 몸체 안정화를 지속적으로 유지한다.
+
+따라서 강건한 1 kHz 아키텍처(Robust 1 kHz Architecture)는 결정론적 스케줄링, 제한된 계산 시간, 사전 할당된 메모리, 실시간 안전 통신, 다중 주파수 인터페이스, 동기화된 센싱, 마감시간 감시, 감시 타이머 보호, 명령 검증 및 사전에 정의된 대체 동작을 기반으로 한다. 이 아키텍처의 핵심 가치는 단순히 1 kHz라는 수치적 주파수에 있는 것이 아니라 매 1밀리초마다 예측 가능한 물리 제어를 보장하는 데 있다.
+
+##  
+
+## 02.09. Locomotion Monitoring and Diagnostics [w/Code]
+
+![](images/image9.png){width="7.268055555555556in" height="7.268055555555556in"}
+
+Locomotion monitoring and diagnostics provide continuous visibility into the physical, computational, and control state of a quadruped robot. A locomotion system may appear functional while actuator saturation, estimator drift, contact errors, timing overruns, or thermal problems gradually develop. Monitoring converts these hidden conditions into measurable indicators so that abnormal behavior can be detected before it becomes instability or hardware failure.
+
+Monitoring should span the complete locomotion stack rather than focus only on actuator faults. Relevant information originates from sensors, state estimation, gait generation, Model Predictive Control (MPC), Whole-Body Control (WBC), reinforcement-learning policies, the Hardware Abstraction Layer (HAL), communication buses, and the real-time control loop. Correlating these layers is essential for identifying the actual origin of abnormal robot behavior.
+
+Joint-level monitoring provides the most direct view of actuator behavior. Position, velocity, commanded torque, measured or estimated torque, motor current, temperature, voltage, and drive status can be observed continuously. Comparing commanded and measured quantities reveals tracking errors, mechanical resistance, saturation, calibration problems, or actuator degradation that may not immediately produce a hardware fault.
+
+Tracking error should be interpreted in relation to operating conditions. A temporary position error during impact may be acceptable, while persistent error during normal stance may indicate insufficient torque, excessive load, mechanical damage, or controller tuning problems. Diagnostic thresholds should therefore consider gait phase, commanded motion, actuator limits, and the expected dynamic behavior of the robot.
+
+Actuator saturation is a particularly important diagnostic signal. Repeated torque or current saturation indicates that the controller is requesting behavior close to or beyond physical capability. The cause may be excessive speed, aggressive acceleration, poor foothold selection, unexpected payload, low friction, incorrect model parameters, or mechanical resistance. Persistent saturation should be reported to supervisory control rather than silently clipped.
+
+Thermal monitoring protects motors, drives, batteries, and computing hardware from accumulated stress. Temperature limits can be divided into warning, derating, and critical regions. As temperature rises, the system may reduce torque limits or locomotion speed before reaching a shutdown threshold. This gradual response provides graceful degradation instead of waiting for an abrupt thermal fault.
+
+Electrical diagnostics include supply voltage, battery current, bus voltage, actuator current, and power consumption. Sudden voltage drops may indicate excessive transient load or battery limitations, while abnormal current patterns can reveal stalled joints or mechanical interference. Energy monitoring also helps evaluate gait efficiency and determine whether locomotion performance is sustainable over long missions.
+
+Communication health should be monitored continuously because distributed quadruped control depends on reliable data exchange. Packet loss, bus errors, retransmissions, communication latency, stale messages, and device timeouts can degrade control even when every actuator remains mechanically healthy. Diagnostics should distinguish occasional communication disturbances from persistent network degradation.
+
+Real-time timing diagnostics are equally important. A nominal 1 kHz loop does not guarantee that every control cycle actually completes within 1 millisecond. The system should measure execution time, wake-up jitter, communication duration, solver time, and deadline overruns. Maximum and percentile timing statistics often reveal problems that average execution time alone can hide.
+
+State-estimation monitoring determines whether the controller can trust its representation of robot motion. Orientation, base velocity, joint states, contact estimates, estimator covariance, innovation residuals, and sensor validity can be checked for consistency. A locomotion controller operating on inaccurate state estimates may generate apparently reasonable commands that are physically inappropriate for the actual robot.
+
+IMU diagnostics should detect saturation, bias drift, discontinuities, timestamp errors, and implausible acceleration or angular velocity. Because inertial measurements strongly influence body-state estimation, subtle IMU problems can propagate throughout the locomotion stack. Cross-checking inertial estimates against kinematic and contact information can expose inconsistencies before they destabilize control.
+
+Contact monitoring compares planned contact states with measured or estimated physical contacts. A planned stance foot that produces no supporting force may indicate slip, terrain-height error, failed touchdown, or incorrect contact estimation. Conversely, an unexpected contact during swing may indicate obstacle collision or premature touchdown. These events are valuable indicators of terrain interaction quality.
+
+Slip detection is particularly important because many locomotion controllers assume that stance feet remain approximately stationary relative to the ground. Foot velocity, estimated ground reaction force, joint motion, body acceleration, and friction estimates can be combined to identify probable slip. Persistent slip should influence gait selection, velocity limits, foothold planning, or recovery behavior.
+
+Ground reaction force monitoring provides insight into load distribution and contact quality. Large differences between commanded and measured forces may indicate inaccurate dynamics, poor state estimation, actuator limitations, or unexpected terrain compliance. Force distribution can also reveal whether one leg is consistently overloaded because of body posture, payload imbalance, or calibration errors.
+
+Gait diagnostics monitor phase progression, duty factor, swing duration, stance duration, touchdown timing, liftoff timing, and synchronization among legs. Deviations between planned and actual gait events can indicate terrain disturbances or controller problems. Monitoring these quantities over multiple cycles can reveal systematic asymmetry that may be difficult to observe from individual joint signals.
+
+Foot trajectory diagnostics compare desired and measured foot motion in both swing and stance. Excessive swing tracking error may indicate insufficient actuator bandwidth or kinematic limitations, while unexpected stance-foot movement can indicate slip or structural compliance. Minimum foot clearance and obstacle-contact events can also be recorded to evaluate terrain traversal performance.
+
+Body-level monitoring evaluates roll, pitch, yaw, height, linear velocity, angular velocity, and acceleration relative to desired references. Stability indicators can be derived from orientation error, support configuration, contact forces, momentum, or other controller-specific quantities. Rapid growth of body-state error can provide an early warning before a complete loss of balance occurs.
+
+MPC diagnostics should expose more than the optimized command. Solver status, computation time, objective value, constraint violation, predicted states, contact forces, and infeasibility events provide information about whether the optimization problem remains physically meaningful. Frequent solver difficulty may indicate poor model parameters, unrealistic references, or contact schedules inconsistent with the environment.
+
+WBC diagnostics can similarly report task errors, constraint residuals, joint torque limits, contact consistency, and optimization status. When several tasks compete for limited actuator authority, monitoring their residual errors reveals which objectives are being sacrificed. This is valuable when debugging locomotion because a stable robot may still be failing to achieve intended body or swing-foot behavior.
+
+Learning-based locomotion introduces additional diagnostic requirements. Policy observations and actions should be checked for valid ranges, normalization errors, stale data, and distribution shifts. If available, policy confidence or uncertainty can be monitored. Large deviations from the training distribution can trigger reduced policy authority or transition toward a conservative model-based controller.
+
+Hybrid model-based and learning-based architectures should monitor the contribution of each component separately. In residual reinforcement learning, for example, the nominal command and learned residual should both be logged. A continuously large residual may indicate that the baseline model is inaccurate or that the learned policy is compensating for a persistent hardware or calibration problem.
+
+The locomotion state machine provides important diagnostic context because identical sensor values can have different meanings in different modes. High joint velocity may be normal during dynamic locomotion but abnormal during standing. Monitoring rules should therefore be mode-aware, and every diagnostic event should record the active locomotion state and relevant transition history.
+
+Diagnostic severity should be standardized into meaningful levels. Informational events can record normal transitions, warnings can identify degrading conditions, recoverable faults can request reduced performance or recovery behavior, and critical faults can demand immediate protective action. A consistent severity model prevents individual software modules from implementing contradictory responses to similar problems.
+
+Fault isolation attempts to identify the source rather than merely detect abnormal behavior. A body tilt could originate from foot slip, actuator weakness, incorrect contact estimation, or an IMU problem. Correlating joint commands, forces, contact states, estimator residuals, and communication health helps distinguish these possibilities and reduces unnecessary replacement of healthy components.
+
+Fault detection can combine fixed thresholds with model-based consistency checks. Simple limits are effective for temperature, voltage, torque, and timing, while relationships among several signals can identify subtler failures. Expected motion derived from robot dynamics or kinematics can be compared with measured behavior to generate residuals that indicate inconsistency.
+
+Trend monitoring extends diagnostics beyond instantaneous faults. Slowly increasing motor current, rising joint friction, worsening tracking error, or increasing communication retries may indicate degradation long before a hard limit is exceeded. Statistical summaries across hours or missions can support predictive maintenance and help identify components approaching failure.
+
+Logging should preserve enough information to reconstruct important locomotion events. High-rate logs may include joint states, commands, IMU data, contacts, forces, controller outputs, solver status, timing information, state-machine events, and hardware diagnostics. All records should use a common time reference so that events from different layers can be aligned during analysis.
+
+Because unrestricted high-rate logging can consume excessive storage and communication bandwidth, logging should be structured by importance and rate. A ring buffer can continuously retain recent high-frequency data and preserve it when a fault occurs. Lower-rate summaries can be stored continuously, while detailed traces around abnormal events provide evidence without requiring permanent recording of every raw sample.
+
+Event-triggered recording is particularly useful for intermittent failures. When slip, deadline overrun, actuator saturation, estimator divergence, or a state transition occurs, the system can preserve data from several seconds before and after the event. Pre-trigger history is important because the cause of a failure often appears before the condition that finally activates the fault detector.
+
+Online dashboards can present selected health indicators without becoming part of the real-time control path. Operators may observe gait mode, body orientation, actuator temperatures, battery state, communication health, solver status, and active warnings. Visualization processes should consume diagnostic data asynchronously so that display performance cannot interfere with deterministic locomotion control.
+
+Diagnostic information should also be accessible to autonomous supervisory software. A Physical AI system should not depend exclusively on a human operator to interpret robot health. High-level planning can use diagnostic status to reduce speed, avoid difficult terrain, return to a charging location, request maintenance, or terminate a mission when continued operation becomes unsafe.
+
+Recovery decisions should depend on diagnostic evidence. A temporary slip may require only gait adaptation, while repeated contact loss combined with increasing body tilt may justify a recovery transition. An actuator communication failure may require controlled stopping rather than balance recovery. Mapping diagnostic patterns to appropriate responses prevents one generic recovery behavior from being used for every failure.
+
+Simulation provides a safe environment for validating diagnostic logic. Sensor faults, actuator saturation, communication delay, terrain slip, estimator drift, and timing overruns can be injected systematically. The monitoring system should detect the injected condition with acceptable latency while avoiding excessive false alarms during normal dynamic behavior.
+
+Hardware-in-the-loop testing extends this validation to actual electronics and communication devices. Real motor drives, sensors, buses, or embedded controllers can be exposed to packet loss, delayed commands, voltage variation, or simulated mechanical loads. This allows diagnostic thresholds and fault responses to be evaluated before unrestricted operation on the complete robot.
+
+Diagnostic quality should itself be measured. Detection latency, false-positive rate, false-negative rate, fault-isolation accuracy, and recovery success can serve as engineering metrics. A monitoring system that generates constant unnecessary warnings can become nearly as ineffective as one that misses failures, because operators and supervisory software may stop trusting its outputs.
+
+For quadruped Physical AI, monitoring and diagnostics create the feedback path through which the system evaluates not only the environment but also its own physical capability. Intelligence must know whether sensing, estimation, control, communication, computation, and actuation remain trustworthy before making increasingly complex behavioral decisions.
+
+A robust locomotion monitoring architecture therefore combines high-rate telemetry, mode-aware thresholds, timing analysis, estimator consistency checks, contact and slip detection, controller diagnostics, fault isolation, trend analysis, synchronized logging, event-triggered recording, and graded safety responses. Together these mechanisms transform raw operational data into actionable knowledge about the health and reliability of the locomotion system.
+
+이동 모니터링 및 진단(Locomotion Monitoring and Diagnostics)은 사족보행 로봇(Quadruped Robot)의 물리적 상태, 계산 상태 및 제어 상태를 지속적으로 관찰할 수 있도록 한다. 이동 시스템이 정상적으로 동작하는 것처럼 보이더라도 액추에이터 포화(Actuator Saturation), 상태 추정기 드리프트(Estimator Drift), 접촉 오류, 타이밍 오버런(Timing Overrun), 열 문제가 점진적으로 발생할 수 있다. 모니터링은 이러한 숨겨진 상태를 측정 가능한 지표로 변환하여 불안정성이나 하드웨어 고장으로 발전하기 전에 비정상적인 동작을 감지할 수 있도록 한다.
+
+모니터링은 액추에이터 고장에만 집중하는 것이 아니라 전체 이동 스택(Locomotion Stack)을 포괄해야 한다. 관련 정보는 센서, 상태 추정(State Estimation), 보행 생성(Gait Generation), 모델 예측 제어(Model Predictive Control, MPC), 전신 제어(Whole-Body Control, WBC), 강화학습 정책(Reinforcement-Learning Policy), 하드웨어 추상화 계층(Hardware Abstraction Layer, HAL), 통신 버스 및 실시간 제어 루프에서 발생한다. 이러한 계층의 정보를 서로 연계하는 것은 비정상적인 로봇 동작의 실제 원인을 식별하는 데 필수적이다.
+
+관절 수준 모니터링(Joint-Level Monitoring)은 액추에이터 동작을 가장 직접적으로 관찰할 수 있는 방법을 제공한다. 위치, 속도, 명령 토크, 측정 또는 추정 토크, 모터 전류, 온도, 전압 및 드라이브 상태를 지속적으로 관찰할 수 있다. 명령값과 측정값을 비교하면 즉각적인 하드웨어 고장을 발생시키지 않는 추종 오류, 기계적 저항, 포화, 보정 문제 또는 액추에이터 성능 저하를 확인할 수 있다.
+
+추종 오차(Tracking Error)는 운용 조건과 연계하여 해석해야 한다. 충격이 발생하는 동안 일시적인 위치 오차는 허용될 수 있지만 정상적인 지지 상태에서 지속적으로 발생하는 오차는 부족한 토크, 과도한 하중, 기계적 손상 또는 제어기 튜닝 문제를 나타낼 수 있다. 따라서 진단 임계값(Diagnostic Threshold)은 보행 위상, 명령된 움직임, 액추에이터 제한 및 로봇의 예상 동적 거동을 함께 고려해야 한다.
+
+액추에이터 포화(Actuator Saturation)는 특히 중요한 진단 신호이다. 토크 또는 전류 포화가 반복적으로 발생한다는 것은 제어기가 물리적 성능 한계에 가깝거나 이를 초과하는 행동을 요구하고 있음을 의미한다. 원인은 과도한 속도, 공격적인 가속, 부적절한 발 디딤 위치 선택, 예상하지 못한 탑재 하중, 낮은 마찰, 잘못된 모델 파라미터 또는 기계적 저항일 수 있다. 지속적인 포화는 단순히 제한해서는 안 되며 감독 제어(Supervisory Control)에 보고해야 한다.
+
+열 모니터링(Thermal Monitoring)은 모터, 드라이브, 배터리 및 컴퓨팅 하드웨어를 누적되는 열적 스트레스로부터 보호한다. 온도 제한은 경고(Warning), 성능 제한(Derating), 임계(Critical) 영역으로 구분할 수 있다. 온도가 상승하면 시스템은 정지 임계값에 도달하기 전에 토크 제한이나 이동 속도를 감소시킬 수 있다. 이러한 점진적 대응은 갑작스러운 열 고장을 기다리는 대신 우아한 성능 저하(Graceful Degradation)를 제공한다.
+
+전기적 진단(Electrical Diagnostics)에는 공급 전압, 배터리 전류, 버스 전압, 액추에이터 전류 및 전력 소비가 포함된다. 갑작스러운 전압 강하는 과도한 순간 부하 또는 배터리 성능 제한을 의미할 수 있으며, 비정상적인 전류 패턴은 관절 정지나 기계적 간섭을 나타낼 수 있다. 에너지 모니터링(Energy Monitoring)은 보행 효율을 평가하고 장시간 임무 동안 이동 성능을 지속할 수 있는지를 판단하는 데에도 도움이 된다.
+
+분산형 사족보행 제어는 신뢰할 수 있는 데이터 교환에 의존하므로 통신 상태(Communication Health)를 지속적으로 모니터링해야 한다. 패킷 손실, 버스 오류, 재전송, 통신 지연, 오래된 메시지 및 장치 타임아웃은 모든 액추에이터가 기계적으로 정상인 경우에도 제어 성능을 저하시킬 수 있다. 진단 시스템은 일시적인 통신 장애와 지속적인 네트워크 성능 저하를 구분해야 한다.
+
+실시간 타이밍 진단(Real-Time Timing Diagnostics) 역시 중요하다. 명목상 1 kHz 루프라고 해서 모든 제어 주기가 실제로 1밀리초 이내에 완료되는 것은 아니다. 시스템은 실행 시간, 기상 지터(Wake-Up Jitter), 통신 시간, 솔버 계산 시간 및 마감시간 초과(Deadline Overrun)를 측정해야 한다. 최대값과 백분위 타이밍 통계(Percentile Timing Statistics)는 평균 실행 시간만으로는 발견하기 어려운 문제를 나타내는 경우가 많다.
+
+상태 추정 모니터링(State-Estimation Monitoring)은 제어기가 로봇 움직임에 대한 내부 표현을 신뢰할 수 있는지를 판단한다. 자세, 베이스 속도, 관절 상태, 접촉 추정값, 추정기 공분산(Estimator Covariance), 혁신 잔차(Innovation Residual) 및 센서 유효성을 일관성 측면에서 검사할 수 있다. 부정확한 상태 추정값을 사용하는 이동 제어기는 겉으로는 합리적으로 보이지만 실제 로봇의 물리 상태에는 적절하지 않은 명령을 생성할 수 있다.
+
+IMU 진단(IMU Diagnostics)은 포화, 바이어스 드리프트(Bias Drift), 불연속성, 타임스탬프 오류 및 물리적으로 타당하지 않은 가속도나 각속도를 감지해야 한다. 관성 측정값은 몸체 상태 추정에 큰 영향을 주기 때문에 미세한 IMU 문제도 전체 이동 스택으로 전파될 수 있다. 관성 추정값을 운동학 및 접촉 정보와 교차 검증(Cross-Checking)하면 제어를 불안정하게 만들기 전에 불일치를 발견할 수 있다.
+
+접촉 모니터링(Contact Monitoring)은 계획된 접촉 상태와 실제로 측정되거나 추정된 물리적 접촉 상태를 비교한다. 지지 상태로 계획된 발에서 지지력이 발생하지 않는다면 미끄러짐, 지형 높이 오차, 착지 실패 또는 잘못된 접촉 추정을 의미할 수 있다. 반대로 스윙 중 예상하지 못한 접촉이 발생한다면 장애물 충돌이나 조기 착지(Premature Touchdown)를 의미할 수 있다. 이러한 이벤트는 지형 상호작용 품질을 평가하는 중요한 지표이다.
+
+미끄러짐 감지(Slip Detection)는 많은 이동 제어기가 지지 상태의 발이 지면에 대해 거의 정지해 있다고 가정하기 때문에 특히 중요하다. 발 속도, 추정 지면 반력(Ground Reaction Force), 관절 움직임, 몸체 가속도 및 마찰 추정값을 결합하여 미끄러짐 가능성을 식별할 수 있다. 지속적인 미끄러짐은 보행 선택, 속도 제한, 발 디딤 계획 또는 복구 행동에 반영되어야 한다.
+
+지면 반력 모니터링(Ground Reaction Force Monitoring)은 하중 분배와 접촉 품질에 대한 정보를 제공한다. 명령된 힘과 측정된 힘 사이에 큰 차이가 발생하면 부정확한 동역학, 잘못된 상태 추정, 액추에이터 제한 또는 예상하지 못한 지형 순응성(Terrain Compliance)을 의미할 수 있다. 또한 힘 분포를 통해 몸체 자세, 탑재 하중 불균형 또는 보정 오류로 인해 특정 다리에 지속적으로 과도한 하중이 가해지는지를 확인할 수 있다.
+
+보행 진단(Gait Diagnostics)은 위상 진행, 듀티 팩터(Duty Factor), 스윙 지속 시간, 지지 지속 시간, 착지 시점, 이지(Liftoff) 시점 및 다리 사이의 동기화를 모니터링한다. 계획된 보행 이벤트와 실제 이벤트 사이의 차이는 지형 외란이나 제어기 문제를 나타낼 수 있다. 여러 주기에 걸쳐 이러한 물리량을 관찰하면 개별 관절 신호만으로는 확인하기 어려운 체계적인 비대칭을 발견할 수 있다.
+
+발 궤적 진단(Foot Trajectory Diagnostics)은 스윙 및 지지 상태에서 목표 발 움직임과 실제 측정된 발 움직임을 비교한다. 과도한 스윙 추종 오차는 액추에이터 대역폭 부족이나 운동학적 제한을 의미할 수 있으며, 예상하지 못한 지지 발의 움직임은 미끄러짐 또는 구조적 순응성(Structural Compliance)을 의미할 수 있다. 최소 발 여유 높이(Minimum Foot Clearance)와 장애물 접촉 이벤트도 기록하여 지형 통과 성능을 평가할 수 있다.
+
+몸체 수준 모니터링(Body-Level Monitoring)은 목표 기준값에 대한 롤(Roll), 피치(Pitch), 요(Yaw), 높이, 선속도, 각속도 및 가속도를 평가한다. 안정성 지표(Stability Indicator)는 자세 오차, 지지 구성, 접촉력, 운동량 또는 기타 제어기별 물리량으로부터 도출할 수 있다. 몸체 상태 오차가 빠르게 증가하는 현상은 완전히 균형을 상실하기 전에 조기 경고(Early Warning)를 제공할 수 있다.
+
+MPC 진단(MPC Diagnostics)은 최적화된 명령뿐만 아니라 추가적인 내부 상태도 제공해야 한다. 솔버 상태, 계산 시간, 목적 함수 값, 제약조건 위반, 예측 상태, 접촉력 및 실행 불가능 이벤트(Infeasibility Event)는 최적화 문제가 물리적으로 유효한 상태를 유지하는지를 판단할 수 있는 정보를 제공한다. 솔버 문제가 반복적으로 발생한다면 잘못된 모델 파라미터, 비현실적인 기준값 또는 환경과 일치하지 않는 접촉 스케줄을 의미할 수 있다.
+
+WBC 진단(WBC Diagnostics)도 작업 오차, 제약조건 잔차(Constraint Residual), 관절 토크 제한, 접촉 일관성 및 최적화 상태를 보고할 수 있다. 여러 작업이 제한된 액추에이터 제어 권한을 두고 경쟁하는 경우 각 작업의 잔차 오차를 모니터링하면 어떤 목표가 희생되고 있는지를 확인할 수 있다. 이는 로봇이 안정적으로 움직이지만 의도한 몸체 또는 스윙 발 동작을 달성하지 못하는 문제를 디버깅할 때 유용하다.
+
+학습 기반 이동(Learning-Based Locomotion)은 추가적인 진단 요구사항을 가진다. 정책 관측값과 행동은 유효 범위, 정규화 오류, 오래된 데이터 및 분포 변화(Distribution Shift)에 대해 검사해야 한다. 가능한 경우 정책 신뢰도(Policy Confidence) 또는 불확실성도 모니터링할 수 있다. 학습 분포에서 크게 벗어난 상태가 감지되면 정책의 제어 권한을 줄이거나 보수적인 모델 기반 제어기로 전환할 수 있다.
+
+하이브리드 모델 기반 및 학습 기반 아키텍처에서는 각 구성요소의 기여도를 별도로 모니터링해야 한다. 예를 들어 잔차 강화학습(Residual Reinforcement Learning)에서는 기준 명령(Nominal Command)과 학습된 잔차(Learned Residual)를 모두 기록해야 한다. 지속적으로 큰 잔차가 발생한다면 기준 모델이 부정확하거나 학습 정책이 지속적인 하드웨어 또는 보정 문제를 보상하고 있음을 의미할 수 있다.
+
+이동 상태 머신(Locomotion State Machine)은 동일한 센서 값도 서로 다른 모드에서는 다른 의미를 가질 수 있기 때문에 중요한 진단 맥락(Diagnostic Context)을 제공한다. 높은 관절 속도는 동적 이동에서는 정상일 수 있지만 기립 상태에서는 비정상적일 수 있다. 따라서 모니터링 규칙은 모드 인지형(Mode-Aware)으로 구성되어야 하며 모든 진단 이벤트에는 활성 이동 상태와 관련 전환 이력이 함께 기록되어야 한다.
+
+진단 심각도(Diagnostic Severity)는 의미 있는 수준으로 표준화해야 한다. 정보성 이벤트는 정상적인 전환을 기록하고, 경고는 성능 저하 상태를 식별하며, 복구 가능한 고장(Recoverable Fault)은 성능 제한이나 복구 행동을 요청하고, 치명적 고장(Critical Fault)은 즉각적인 보호 동작을 요구할 수 있다. 일관된 심각도 모델을 사용하면 개별 소프트웨어 모듈이 유사한 문제에 서로 상충되는 대응을 수행하는 것을 방지할 수 있다.
+
+고장 격리(Fault Isolation)는 단순히 비정상 동작을 감지하는 것이 아니라 그 원인을 식별하는 것을 목표로 한다. 몸체 기울어짐은 발 미끄러짐, 액추에이터 성능 저하, 잘못된 접촉 추정 또는 IMU 문제에서 발생할 수 있다. 관절 명령, 힘, 접촉 상태, 추정기 잔차 및 통신 상태를 서로 연계하면 이러한 가능성을 구분하고 정상적인 부품을 불필요하게 교체하는 것을 줄일 수 있다.
+
+고장 감지(Fault Detection)는 고정 임계값과 모델 기반 일관성 검사(Model-Based Consistency Check)를 결합할 수 있다. 단순한 제한값은 온도, 전압, 토크 및 타이밍을 감시하는 데 효과적이며, 여러 신호 사이의 관계를 이용하면 더 미묘한 고장을 식별할 수 있다. 로봇 동역학이나 운동학으로부터 계산한 예상 움직임을 실제 측정 거동과 비교하여 불일치를 나타내는 잔차를 생성할 수 있다.
+
+추세 모니터링(Trend Monitoring)은 진단 범위를 순간적인 고장 이상으로 확장한다. 모터 전류의 점진적인 증가, 관절 마찰 상승, 추종 오차 악화 또는 통신 재시도 증가 등은 하드 한계에 도달하기 훨씬 전부터 성능 저하를 나타낼 수 있다. 여러 시간 또는 여러 임무에 걸친 통계 요약은 예지 정비(Predictive Maintenance)를 지원하고 고장에 가까워지는 구성요소를 식별하는 데 도움을 줄 수 있다.
+
+로깅(Logging)은 중요한 이동 이벤트를 재구성할 수 있을 정도로 충분한 정보를 보존해야 한다. 고주파 로그에는 관절 상태, 명령, IMU 데이터, 접촉, 힘, 제어기 출력, 솔버 상태, 타이밍 정보, 상태 머신 이벤트 및 하드웨어 진단 정보가 포함될 수 있다. 서로 다른 계층의 이벤트를 분석 과정에서 정렬할 수 있도록 모든 기록은 공통 시간 기준(Common Time Reference)을 사용해야 한다.
+
+제한 없이 고주파 로깅을 수행하면 과도한 저장공간과 통신 대역폭을 소비할 수 있으므로 중요도와 주파수에 따라 로깅을 구조화해야 한다. 링 버퍼(Ring Buffer)는 최근의 고주파 데이터를 지속적으로 유지하고 고장이 발생했을 때 이를 보존할 수 있다. 낮은 주파수의 요약 데이터는 지속적으로 저장하고 비정상 이벤트 주변의 상세 추적 데이터만 별도로 보존하면 모든 원시 샘플을 영구적으로 기록하지 않고도 충분한 증거를 확보할 수 있다.
+
+이벤트 트리거 기록(Event-Triggered Recording)은 간헐적인 고장을 분석할 때 특히 유용하다. 미끄러짐, 마감시간 초과, 액추에이터 포화, 상태 추정기 발산 또는 상태 전환이 발생하면 시스템은 해당 이벤트 발생 전후 수초 동안의 데이터를 보존할 수 있다. 고장의 실제 원인은 최종적으로 고장 감지기가 활성화되기 전에 나타나는 경우가 많기 때문에 사전 트리거 이력(Pre-Trigger History)이 중요하다.
+
+온라인 대시보드(Online Dashboard)는 실시간 제어 경로의 일부가 되지 않으면서 선택된 상태 지표를 표시할 수 있다. 운영자는 보행 모드, 몸체 자세, 액추에이터 온도, 배터리 상태, 통신 상태, 솔버 상태 및 활성 경고를 확인할 수 있다. 디스플레이 성능이 결정론적인 이동 제어에 영향을 주지 않도록 시각화 프로세스는 진단 데이터를 비동기적으로 사용해야 한다.
+
+진단 정보는 자율 감독 소프트웨어(Autonomous Supervisory Software)에서도 사용할 수 있어야 한다. 피지컬 AI(Physical AI) 시스템은 로봇 상태를 해석하기 위해 인간 운영자에게만 의존해서는 안 된다. 상위 수준 계획 시스템은 진단 상태를 이용하여 속도를 낮추고, 어려운 지형을 회피하고, 충전 위치로 복귀하고, 유지보수를 요청하거나, 계속 운용하는 것이 위험한 경우 임무를 종료할 수 있다.
+
+복구 결정(Recovery Decision)은 진단 증거를 기반으로 해야 한다. 일시적인 미끄러짐은 보행 적응만 필요할 수 있지만 반복적인 접촉 손실과 몸체 기울기 증가가 동시에 발생하면 복구 상태로 전환해야 할 수 있다. 액추에이터 통신 고장은 균형 복구보다 제어된 정지(Controlled Stop)가 필요할 수 있다. 진단 패턴을 적절한 대응과 연결하면 모든 고장에 하나의 일반적인 복구 행동을 사용하는 문제를 방지할 수 있다.
+
+시뮬레이션(Simulation)은 진단 로직을 검증하기 위한 안전한 환경을 제공한다. 센서 고장, 액추에이터 포화, 통신 지연, 지형 미끄러짐, 상태 추정기 드리프트 및 타이밍 오버런을 체계적으로 주입할 수 있다. 모니터링 시스템은 정상적인 동적 행동에서 과도한 오경보(False Alarm)를 발생시키지 않으면서 허용 가능한 지연시간 내에 주입된 이상 상태를 감지해야 한다.
+
+하드웨어 인 더 루프 시험(Hardware-in-the-Loop Testing, HIL)은 이러한 검증을 실제 전자장치와 통신 장치까지 확장한다. 실제 모터 드라이브, 센서, 버스 또는 임베디드 제어기에 패킷 손실, 지연된 명령, 전압 변화 또는 시뮬레이션된 기계적 하중을 적용할 수 있다. 이를 통해 완전한 로봇에서 제한 없는 운용을 수행하기 전에 진단 임계값과 고장 대응을 평가할 수 있다.
+
+진단 품질(Diagnostic Quality) 자체도 측정해야 한다. 감지 지연시간(Detection Latency), 위양성률(False-Positive Rate), 위음성률(False-Negative Rate), 고장 격리 정확도(Fault-Isolation Accuracy) 및 복구 성공률을 공학적 성능 지표로 사용할 수 있다. 지속적으로 불필요한 경고를 발생시키는 모니터링 시스템은 고장을 놓치는 시스템만큼 비효율적일 수 있는데, 운영자와 감독 소프트웨어가 진단 결과를 신뢰하지 않게 될 수 있기 때문이다.
+
+사족보행 피지컬 AI(Quadruped Physical AI)의 관점에서 모니터링 및 진단은 시스템이 환경뿐만 아니라 자신의 물리적 능력까지 평가할 수 있도록 하는 피드백 경로를 형성한다. 지능 시스템은 점점 더 복잡한 행동 결정을 내리기 전에 센싱, 상태 추정, 제어, 통신, 계산 및 구동 기능이 여전히 신뢰할 수 있는지를 판단할 수 있어야 한다.
+
+따라서 강건한 이동 모니터링 아키텍처(Robust Locomotion Monitoring Architecture)는 고주파 텔레메트리, 모드 인지형 임계값, 타이밍 분석, 상태 추정기 일관성 검사, 접촉 및 미끄러짐 감지, 제어기 진단, 고장 격리, 추세 분석, 동기화된 로깅, 이벤트 트리거 기록 및 단계별 안전 대응을 결합한다. 이러한 메커니즘은 원시 운용 데이터를 이동 시스템의 상태와 신뢰성에 관한 실행 가능한 지식(Actionable Knowledge)으로 변환한다.
+
+##  
+
+## 02.10. Locomotion SW Testing HIL and SIL Framework
+
+![](images/image10.png){width="7.268055555555556in" height="7.268055555555556in"}
+
+Locomotion software testing for a quadruped robot requires a structured framework that validates algorithms before they are exposed to unrestricted physical operation. Software-in-the-Loop (SIL) and Hardware-in-the-Loop (HIL) testing provide complementary environments for this purpose. SIL emphasizes repeatable software and dynamics simulation, while HIL introduces real computing, communication, sensing, or actuator hardware into the validation loop.
+
+The primary objective of the testing framework is to progressively reduce uncertainty. A locomotion controller should not move directly from algorithm development to full robot deployment. Individual functions are first tested independently, then integrated within simulation, followed by timing and interface validation, partial hardware testing, and finally controlled experiments on the complete robot. Each stage should define explicit entry and exit criteria.
+
+Unit testing provides the lowest level of verification. Mathematical functions, coordinate transformations, filters, gait phase calculations, kinematic mappings, command limiters, state-transition conditions, and diagnostic logic can be tested with deterministic inputs and expected outputs. These tests are inexpensive to execute frequently and help identify software defects before they become difficult to isolate inside a complete locomotion system.
+
+Interface testing verifies the contracts between software components. A state estimator, gait generator, MPC, WBC, reinforcement-learning policy, and Hardware Abstraction Layer (HAL) may each operate correctly independently while still failing when connected. Tests should verify units, coordinate frames, joint ordering, timestamps, message validity, update rates, and expected behavior when data is missing or delayed.
+
+Software-in-the-Loop testing executes locomotion software against a simulated robot and environment. The same controller architecture intended for the physical quadruped should be used whenever practical. The simulator supplies joint states, IMU measurements, contact information, and environmental interactions, while the controller produces actuator commands through an interface equivalent to the real hardware interface.
+
+A useful SIL architecture separates the robot controller from the simulation engine through a standardized abstraction boundary. This allows different simulators or robot models to be connected without rewriting the locomotion controller. It also encourages the simulated hardware interface to follow the same units, joint conventions, timing semantics, and command structures used by the physical HAL.
+
+SIL testing should begin with simple deterministic scenarios. Standing on flat ground, maintaining body height, executing controlled joint motions, and performing low-speed walking provide clear baseline cases. Once these pass reliably, testing can progress toward higher speeds, gait transitions, slopes, stairs, uneven terrain, external disturbances, payload changes, and increasingly complex contact conditions.
+
+Repeatability is one of the major advantages of simulation. The same initial state, terrain, command sequence, disturbance, and random seed can be executed repeatedly after every software modification. Regression testing can therefore determine whether a new controller feature improves one behavior while unintentionally degrading another previously validated capability.
+
+Automated scenario generation expands SIL beyond a small set of demonstrations. Terrain geometry, friction, payload mass, center-of-mass location, actuator strength, sensor noise, command velocity, and external disturbances can be varied systematically. Parameter sweeps expose regions in which the locomotion stack becomes unstable or violates safety and performance requirements.
+
+Randomized testing is particularly useful for identifying combinations that engineers may not anticipate manually. Domain randomization can vary mass properties, latency, friction, sensor characteristics, actuator dynamics, and terrain parameters. The purpose is not only to improve learned policies but also to stress model-based controllers, state estimators, transition logic, and diagnostic mechanisms under uncertainty.
+
+Fault injection should be a standard part of SIL testing. Encoder errors, IMU bias, delayed packets, dropped messages, incorrect contacts, actuator saturation, solver failure, timing overruns, and communication loss can be introduced deliberately. The expected result is not always continued locomotion; successful testing may require correct detection, graceful degradation, recovery, or controlled stopping.
+
+A scenario should therefore define both performance expectations and safety expectations. Walking speed, tracking error, energy consumption, body stability, and foot-placement accuracy may describe performance, while torque limits, orientation limits, collision constraints, thermal assumptions, and recovery behavior describe safety. A test passes only when the required combination of these conditions is satisfied.
+
+Metrics should be calculated automatically whenever possible. Useful quantities include body pose error, velocity tracking error, foot trajectory error, slip distance, ground reaction force error, torque utilization, energy consumption, solver time, control-loop jitter, number of falls, recovery success, and constraint violations. Automated metrics make regression results more objective than visual inspection alone.
+
+SIL can also validate the locomotion state machine. Tests can issue sequences such as stand, walk, accelerate, transition gait, stop, and recover while verifying that transitions occur only under valid conditions. Boundary tests should deliberately place commands near thresholds to detect oscillation, missing hysteresis, invalid transitions, or unsafe interactions between supervisory logic and continuous control.
+
+Multi-rate software behavior must be tested explicitly. Navigation, perception, MPC, policy inference, WBC, state estimation, and the 1 kHz servo loop may execute at different frequencies. Simulation can introduce realistic update periods and jitter so that developers verify interpolation, buffering, stale-data detection, and asynchronous communication rather than assuming perfectly synchronized software execution.
+
+Real-time Software-in-the-Loop testing adds timing constraints to functional simulation. The controller is executed using its deployment scheduling model while the simulated plant runs in real time or with controlled timing. This reveals whether algorithms that work mathematically can actually satisfy computational deadlines when optimization, inference, communication, and logging execute concurrently.
+
+Hardware-in-the-Loop testing introduces real hardware without immediately exposing the complete robot to unrestricted motion. The physical controller computer may run the actual operating system, real-time scheduler, network stack, and production locomotion binaries while a simulator represents robot dynamics. This validates software execution under deployment-like computational and communication conditions.
+
+One HIL configuration connects the real control computer to simulated actuators and sensors through production communication interfaces. The controller believes it is communicating with the robot, while an interface simulator generates encoder, IMU, force, and fault messages. This arrangement is valuable for testing the HAL, communication timing, watchdogs, initialization procedures, and failure handling.
+
+Another HIL configuration includes actual motor drives or actuators on a test bench. Commands produced by the locomotion stack are transmitted through the real communication bus, and physical drive responses are measured. Mechanical loading can be simulated or applied experimentally. This exposes effects such as drive latency, current limits, encoder behavior, friction, and firmware state transitions.
+
+Sensor HIL can similarly introduce real IMUs, force sensors, encoders, or perception hardware. Controlled motion platforms or signal emulators can generate known inputs while the production software processes actual sensor outputs. This helps validate calibration, synchronization, timestamp handling, sensor saturation behavior, and the transition from raw device data to standardized HAL measurements.
+
+Communication testing is a central HIL function. EtherCAT, CAN-FD, Ethernet, or other production buses can be loaded under realistic traffic conditions while latency, packet loss, synchronization error, and bus faults are measured. Disturbances can be introduced intentionally to verify that stale data, missing devices, or timing degradation are detected before they create unsafe actuator commands.
+
+HIL is especially valuable for validating the 1 kHz real-time control architecture. Execution time, wake-up jitter, communication duration, solver latency, and deadline misses can be measured on the actual deployment computer. CPU load, GPU inference, telemetry, network traffic, and background services should be activated during stress testing to expose resource interference.
+
+Watchdog and fail-safe behavior should be tested intentionally rather than assumed to work. The control process can be paused, crashed, delayed, or disconnected while observing the response of the hardware interface and actuator layer. A successful test demonstrates that stale commands are rejected and the system enters the predefined damping, zero-torque, controlled-stop, or shutdown behavior.
+
+Testing should also verify startup and shutdown sequences. Missing sensors, incorrect configuration files, unavailable actuators, invalid calibration, incompatible firmware, or unexpected initial joint positions should prevent unsafe activation. Shutdown tests should confirm that actuator commands transition toward a safe state before communication and control processes terminate.
+
+Model-based controllers require validation of both mathematical performance and model consistency. Incorrect mass, inertia, joint signs, gear ratios, torque limits, or contact assumptions can produce failures even when MPC or WBC optimization succeeds numerically. SIL and HIL should therefore compare configured robot parameters against simulated and physical hardware representations.
+
+Learning-based locomotion requires additional validation because policy behavior depends on the observation and action distributions encountered during training. Tests should verify observation ordering, normalization, action scaling, inference frequency, recurrent-state initialization, and policy-output limits. Simulation should also explore conditions outside the training distribution to characterize failure boundaries.
+
+Hybrid controllers should test the interactions between model-based and learned components rather than evaluating them only in isolation. For residual reinforcement learning, tests can monitor the nominal command and learned correction separately. For policy-guided MPC, tests should verify that learned references remain compatible with optimization constraints and physical actuator limits.
+
+Regression testing converts SIL and HIL from occasional experiments into an engineering process. A validated collection of scenarios should execute automatically after important software changes. Results can be compared against previous baselines so that changes in stability, tracking accuracy, computation time, energy consumption, or failure rate are detected before deployment.
+
+Continuous integration can execute lightweight unit and SIL tests whenever source code changes, while computationally expensive simulation campaigns and HIL tests can run at scheduled validation stages. Not every test must run on every commit, but the framework should maintain traceability between software versions, test configurations, robot models, and recorded results.
+
+Test artifacts should include configuration files, random seeds, software versions, hardware versions, calibration data, logs, metrics, and pass-or-fail criteria. Without this information, a successful experiment may be difficult to reproduce. Reproducibility is particularly important when locomotion behavior depends on many interacting controller, simulator, and hardware parameters.
+
+Coverage should be evaluated across operating conditions rather than only source-code paths. A locomotion system may execute every software branch while being tested only on flat ground at moderate speed. Meaningful coverage includes gait types, speed ranges, terrain classes, payloads, friction conditions, disturbances, hardware faults, timing conditions, and recovery scenarios.
+
+The transition from HIL to physical robot testing should be governed by explicit gates. Required scenarios should pass, critical faults should produce defined responses, timing margins should remain acceptable, and actuator commands should remain within validated limits. These gates prevent schedule pressure or successful demonstrations from replacing systematic engineering evidence.
+
+Initial physical tests should remain constrained even after SIL and HIL validation. Reduced torque, limited velocity, safety support structures, controlled terrain, emergency-stop systems, and close telemetry monitoring can restrict consequences while remaining modeling errors are identified. Test limits can then expand progressively as evidence accumulates.
+
+Discrepancies between simulation and hardware should feed back into the testing framework. Unexpected friction, structural compliance, actuator delay, sensor noise, contact behavior, or thermal effects can be measured on the robot and incorporated into simulation models. This creates an iterative loop in which physical testing improves SIL fidelity and subsequent simulation becomes more predictive.
+
+For quadruped Physical AI, SIL and HIL provide the bridge between intelligent locomotion algorithms and reliable physical execution. They allow model-based control, reinforcement learning, state estimation, gait logic, real-time software, and hardware interfaces to be challenged systematically before failures can damage equipment or create unsafe motion.
+
+A robust locomotion testing framework therefore combines unit testing, interface verification, repeatable SIL scenarios, randomized stress testing, fault injection, real-time validation, hardware-in-the-loop experiments, automated metrics, regression testing, traceable artifacts, and explicit deployment gates. Together these methods transform locomotion validation from demonstration-driven testing into a reproducible engineering process.
+
+4족 보행 로봇의 로코모션 소프트웨어 테스트는 알고리즘을 제한 없는 실제 물리 운용에 노출시키기 전에 검증하는 구조화된 프레임워크를 필요로 합니다. SIL(Software-in-the-Loop) 및 HIL(Hardware-in-the-Loop) 테스트는 이 목적을 위해 상호 보완적인 환경을 제공합니다. SIL은 재현 가능한 소프트웨어 및 동역학 시뮬레이션을 강조하는 반면, HIL은 검증 루프에 실제 연산, 통신, 감지 또는 액추에이터 하드웨어를 도입합니다.
+
+테스트 프레임워크의 주된 목적은 불확실성을 단계적으로 줄이는 것입니다. 로코모션 제어기는 알고리즘 개발에서 전체 로봇 배치로 직접 넘어가서는 안 됩니다. 개별 기능들을 먼저 독립적으로 테스트한 후 시뮬레이션 내에서 통합하고, 이어서 타이밍 및 인터페이스 검증, 부분 하드웨어 테스트, 그리고 최종적으로 완성된 로봇에서의 통제된 실험을 거쳐야 합니다. 각 단계는 명확한 진입 및 진출 기준을 정의해야 합니다.
+
+단위 테스트(Unit Testing)는 가장 낮은 수준의 검증을 제공합니다. 수학적 함수, 좌표계 변환, 필터, 보행 상(Gait Phase) 계산, 운동학적 매핑, 명령 제한기, 상태 전이 조건, 진단 로직 등은 결정론적 입력과 예상 출력을 통해 테스트될 수 있습니다. 이러한 테스트는 자주 실행하기에 비용이 적게 들며, 전체 로코모션 시스템 내부에서 격리하기 어려워지기 전에 소프트웨어 결함을 식별하는 데 도움이 됩니다.
+
+인터페이스 테스트는 소프트웨어 구성 요소 간의 계약(Contract)을 검증합니다. 상태 추정기, 보행 생성기, MPC, WBC, 강화학습 정책, 그리고 HAL(Hardware Abstraction Layer)은 각각 독립적으로 올바르게 작동하더라도 연결되었을 때 실패할 수 있습니다. 테스트는 단위, 좌표계, 관절 순서, 타임스탬프, 메시지 유효성, 업데이트 주기, 그리고 데이터가 누락되거나 지연될 때의 예상 행동을 검증해야 합니다.
+
+SIL 테스트는 가상의 로봇 및 환경에 대해 로코모션 소프트웨어를 실행합니다. 실제 4족 보행 로봇에 사용될 제어기 아키텍처와 동일한 아키텍처를 가능한 한 적용해야 합니다. 시뮬레이터는 관절 상태, IMU 측정값, 접촉 정보 및 환경과의 상호작용을 제공하며, 제어기는 실제 하드웨어 인터페이스와 동등한 인터페이스를 통해 액추에이터 명령을 생성합니다.
+
+유용한 SIL 아키텍처는 표준화된 추상화 경계를 통해 로봇 제어기를 시뮬레이션 엔진과 분리합니다. 이를 통해 로코모션 제어기를 재작성하지 않고도 서로 다른 시뮬레이터나 로봇 모델을 연결할 수 있습니다. 또한 시뮬레이션된 하드웨어 인터페이스가 실제 HAL에서 사용하는 것과 동일한 단위, 관절 규약, 타이밍 시맨틱 및 명령 구조를 따르도록 유도합니다.
+
+SIL 테스트는 단순한 결정론적 시나리오로 시작해야 합니다. 평지에 서 있기, 몸체 높이 유지하기, 통제된 관절 운동 실행하기, 저속 보행 수행하기 등은 명확한 기준 사례를 제공합니다. 이러한 케이스들이 신뢰성 있게 통과되면 테스트는 더 높은 속도, 보행 전이, 경사로, 계단, 불규칙한 지면, 외부 외란, 페이로드 변화, 그리고 점점 더 복잡해지는 접촉 조건으로 진행될 수 있습니다.
+
+재현성은 시뮬레이션의 가장 큰 장점 중 하나입니다. 동일한 초기 상태, 지형, 명령 시퀀스, 외란 및 난수 시드(Random Seed)를 소프트웨어 수정 후마다 반복해서 실행할 수 있습니다. 따라서 회귀 테스트(Regression Testing)를 통해 새로운 제어기 기능이 하나의 행동을 개선하는 동시에 이전에 검증된 다른 능력을 의도치 않게 저하시키는지 여부를 판단할 수 있습니다.
+
+자동화된 시나리오 생성은 소수의 시연 범위를 넘어 SIL을 확장합니다. 지형 기하 구조, 마찰력, 페이로드 질량, 질량 중심 위치, 액추에이터 힘, 센서 노이즈, 명령 속도, 외부 외란을 시스템적으로 변경할 수 있습니다. 파라미터 스윕(Parameter Sweep)은 로코모션 스택이 불안정해지거나 안전 및 성능 요구사항을 위반하는 영역을 드러냅니다.
+
+무작위 테스트(Randomized Testing)는 엔지니어가 수동으로 예상하지 못할 수 있는 조합을 식별하는 데 특히 유용합니다. 도메인 무작위화(Domain Randomization)는 질량 특성, 지연 시간, 마찰력, 센서 특성, 액추에이터 동역학, 지형 파라미터를 변경할 수 있습니다. 그 목적은 학습된 정책을 향상시키는 것뿐만 아니라, 불확실성 하에서 모델 기반 제어기, 상태 추정기, 전이 로직 및 진단 메커니즘을 검증하는 것입니다.
+
+결함 주입(Fault Injection)은 SIL 테스트의 표준적인 일부여야 합니다. 엔코더 오류, IMU 바이어스, 지연된 패킷, 누락된 메시지, 잘못된 접촉, 액추에이터 포화, 솔버 실패, 타이밍 초과, 통신 상실 등을 의도적으로 도입할 수 있습니다. 예상되는 결과가 항상 지속적인 로코모션인 것은 아니며, 성공적인 테스트에는 올바른 감지, 감쇄 동작(Graceful Degradation), 복구, 또는 통제된 정지가 요구될 수 있습니다.
+
+따라서 시나리오는 성능 기대치와 안전 기대치를 모두 정의해야 합니다. 보행 속도, 추종 오차, 에너지 소비, 몸체 안정성, 발 위치 정확도 등이 성능을 설명할 수 있는 반면, 토크 한계, 자세 한계, 충돌 제약, 열적 가정, 복구 행동 등은 안전을 설명합니다. 필요한 조건들의 조합이 충족될 때에만 테스트를 통과한 것으로 간주합니다.
+
+메트릭은 가능한 한 자동으로 계산되어야 합니다. 유용한량에는 몸체 포즈 오차, 속도 추종 오차, 발 궤적 오차, 슬립 거리, 지면 반력 오차, 토크 활용도, 에너지 소비량, 솔버 시간, 제어 루프 지터, 낙하 횟수, 복구 성공 여부, 제약 위반 등이 포함됩니다. 자동화된 메트릭은 시각적 점검 단독보다 회귀 결과를 더 객관적으로 만들어 줍니다.
+
+SIL은 로코모션 상태 머신도 검증할 수 있습니다. 테스트는 서기, 걷기, 가속, 보행 전이, 정지, 복구와 같은 시퀀스를 발행하면서 유효한 조건 하에서만 전이가 발생하는지 검증할 수 있습니다. 경계 테스트는 명령을 임계값 근처에 의도적으로 배치하여 진동, 히스테리시스 누락, 무효한 전이, 또는 감독 로직과 연속 제어 간의 불안정한 상호작용을 감지해야 합니다.
+
+다중 주기(Multi-rate) 소프트웨어 행동은 명시적으로 테스트되어야 합니다. 내비게이션, 인지, MPC, 정책 추론, WBC, 상태 추정, 그리고 1 kHz 서보 루프는 서로 다른 주기로 실행될 수 있습니다. 시뮬레이션은 현실적인 업데이트 주기와 지터를 도입하여 개발자가 완벽하게 동기화된 소프트웨어 실행을 가증하는 대신 보간, 버퍼링, 오래된 데이터 감지, 비동기 통신을 검증하도록 해야 합니다.
+
+실시간 SIL 테스트는 기능 시뮬레이션에 타이밍 제약 조건을 추가합니다. 시뮬레이션된 플랜트가 실시간 또는 통제된 타이밍으로 작동하는 동안 제어기는 실제 배치 스케줄링 모델을 사용하여 실행됩니다. 이는 수학적으로 작동하는 알고리즘이 최적화, 추론, 통신, 데이터 로깅이 동시에 실행될 때 실제로 연산 데드라인을 충족할 수 있는지 여부를 보여줍니다.
+
+HIL 테스트는 전체 로봇을 제한 없는 운동에 즉시 노출시키지 않으면서 실제 하드웨어를 도입합니다. 실제 제어 컴퓨터는 실제 운영체제, 실시간 스케줄러, 네트워크 스택, 프로덕션 로코모션 바이너리를 실행할 수 있으며, 시뮬레이터는 로봇 동역학을 표현합니다. 이를 통해 실제 배치 환경과 유사한 연산 및 통신 조건 하에서 소프트웨어 실행을 검증합니다.
+
+한 가지 HIL 구성은 프로덕션 통신 인터페이스를 통해 실제 제어 컴퓨터를 가상의 액추에이터 및 센서에 연결합니다. 제어기는 자신이 로봇과 통신하고 있다고 인식하는 반면, 인터페이스 시뮬레이터는 엔코더, IMU, 힘 및 결함 메시지를 생성합니다. 이 구성은 HAL, 통신 타이밍, 워치독, 초기화 절차 및 결함 처리를 테스트하는 데 유용합니다.
+
+또 다른 HIL 구성은 테스트 벤치에 실제 모터 드라이브나 액추에이터를 포함합니다. 로코모션 스택에서 생성된 명령은 실제 통신 버스를 통해 전송되고 실제 드라이브의 응답이 측정됩니다. 기계적 부하는 시뮬레이션되거나 실험적으로 가해질 수 있습니다. 이를 통해 드라이브 지연 시간, 전류 제한, 엔코더 행동, 마찰, 펌웨어 상태 전이와 같은 효과를 확인할 수 있습니다.
+
+센서 HIL 역시 마찬가지로 실제 IMU, 힘 센서, 엔코더 또는 인지 하드웨어를 도입할 수 있습니다. 통제된 운동 플랫폼이나 신호 에뮬레이터가 기지의 입력을 생성하는 동안 프로덕션 소프트웨어는 실제 센서 출력을 처리합니다. 이는 캘리브레이션, 동기화, 타임스탬프 처리, 센서 포화 행동, 그리고 원시 장치 데이터에서 표준화된 HAL 측정값으로의 전이를 검증하는 데 도움을 줍니다.
+
+통신 테스트는 HIL의 핵심 기능입니다. EtherCAT, CAN-FD, Ethernet 또는 기타 프로덕션 버스는 현실적인 트래픽 조건 하에서 부하가 걸린 상태로 지연 시간, 패킷 손실, 동기화 오차, 버스 결함 등이 측정될 수 있습니다. 오래된 데이터, 누락된 장치 또는 타이밍 저하가 위험한 액추에이터 명령을 생성하기 전에 감지되는지 검증하기 위해 의도적으로 외란을 도입할 수 있습니다.
+
+HIL은 1 kHz 실시간 제어 아키텍처를 검증하는 데 특히 유용합니다. 실행 시간, 웨이크업 지터, 통신 소요 시간, 솔버 지연 시간, 데드라인 초과 등을 실제 배치 컴퓨터에서 측정할 수 있습니다. 스트레스 테스트 중에는 자원 간섭을 드러내기 위해 CPU 부하, GPU 추론, 텔레메트리, 네트워크 트래픽 및 백그라운드 서비스를 활성화해야 합니다.
+
+워치독 및 페일세이프 행동은 작동할 것이라고 가정하기보다 의도적으로 테스트되어야 합니다. 하드웨어 인터페이스 및 액추에이터 레이어의 응답을 관찰하는 동안 제어 프로세스를 일시 중단, 강제 종료, 지연 또는 연결 해제할 수 있습니다. 성공적인 테스트는 오래된 명령이 거부되고 시스템이 미리 정의된 댐핑, 제로 토크, 통제된 정지 또는 시스템 종료 행동으로 진입함을 입증합니다.
+
+테스트는 시작 및 종료 시퀀스도 검증해야 합니다. 누락된 센서, 잘못된 설정 파일, 사용할 수 없는 액추에이터, 유효하지 않은 캘리브레이션, 호환되지 않는 펌웨어 또는 예상치 못한 초기 관절 위치가 있는 경우 위험한 활성화를 방지해야 합니다. 종료 테스트는 통신 및 제어 프로세스가 종료되기 전에 액추에이터 명령이 안전한 상태로 전이되는지 확인해야 합니다.
+
+모델 기반 제어기는 수학적 성능과 모델 일치성을 모두 검증해야 합니다. 잘못된 질량, 관성, 관절 부호, 감속비, 토크 한계 또는 접촉 가정은 MPC나 WBC 최적화가 수치적으로 성공하더라도 실패를 유발할 수 있습니다. 따라서 SIL과 HIL은 설정된 로봇 파라미터를 시뮬레이션 및 실제 하드웨어 표현과 비교해야 합니다.
+
+학습 기반 로코모션은 정책 행동이 학습 중에 접한 관측 및 행동 분포에 의존하기 때문에 추가적인 검증이 필요합니다. 테스트는 관측 순서, 정규화, 행동 스케일링, 추론 주기, 순환 상태(Recurrent State) 초기화 및 정책 출력 한계를 검증해야 합니다. 또한 시뮬레이션은 실패 경계를 특성화하기 위해 학습 분포 범위를 벗어난 조건을 탐색해야 합니다.
+
+하이브리드 제어기는 모델 기반 구성 요소와 학습된 구성 요소를 단순히 격리하여 평가하기보다 상호작용을 테스트해야 합니다. 잔여 강화학습(Residual Reinforcement Learning)의 경우 테스트는 기준 명령과 학습된 보정값을 개별적으로 모니터링할 수 있습니다. 정책 유도 MPC(Policy-guided MPC)의 경우 테스트는 학습된 참조값들이 최적화 제약 조건 및 물리적 액추에이터 한계와 호환성을 유지하는지 검증해야 합니다.
+
+회귀 테스트는 SIL과 HIL을 일회성 실험에서 엔지니어링 프로세스로 전환합니다. 검증된 시나리오 모음은 중요한 소프트웨어 변경 후에 자동으로 실행되어야 합니다. 결과를 이전 기준점과 비교할 수 있으므로 안정성, 추종 정확도, 연산 시간, 에너지 소비 또는 고장률의 변화를 배치 전에 감지할 수 있습니다.
+
+소프트웨어 소스 코드가 변경될 때마다 지속적 통합(CI)을 통해 경량 단위 테스트 및 SIL 테스트를 실행할 수 있으며, 연산 비용이 많이 드는 시뮬레이션 캠페인 및 HIL 테스트는 계획된 검증 단계에서 실행될 수 있습니다. 모든 커밋마다 모든 테스트를 실행할 필요는 없지만, 프레임워크는 소프트웨어 버전, 테스트 구성, 로봇 모델 및 기록된 결과 간의 추적성을 유지해야 합니다.
+
+테스트 아티팩트에는 설정 파일, 난수 시드, 소프트웨어 버전, 하드웨어 버전, 캘리브레이션 데이터, 로그, 메트릭 및 통과/실패 기준이 포함되어야 합니다. 이러한 정보가 없으면 성공적인 실험을 재현하기 어려울 수 있습니다. 재현성은 로코모션 행동이 상호작용하는 수많은 제어기, 시뮬레이터 및 하드웨어 파라미터에 의존할 때 특히 중요합니다.
+
+커버리지는 단순히 소스 코드 경로뿐만 아니라 운용 조건 전반에 걸쳐 평가되어야 합니다. 로코모션 시스템은 평지에서 완만한 속도로만 테스트되면서도 모든 소프트웨어 분기를 실행할 수 있습니다. 의미 있는 커버리지에는 보행 유형, 속도 범위, 지형 클래스, 페이로드, 마찰 조건, 외란, 하드웨어 결함, 타이밍 조건 및 복구 시나리오가 포함됩니다.
+
+HIL에서 실제 로봇 테스트로의 전이는 명확한 게이트(Gate)에 의해 통제되어야 합니다. 필수 시나리오를 통과해야 하고, 치명적인 결함이 정의된 응답을 생성해야 하며, 타이밍 마진이 허용 가능한 수준을 유지해야 하고, 액추에이터 명령이 검증된 한계 내에 남아 있어야 합니다. 이러한 게이트는 일정 압박이나 성공적인 시연이 체계적인 엔지니어링 증거를 대체하는 것을 방지합니다.
+
+초기 물리 테스트는 SIL 및 HIL 검증 후에도 제한적으로 유지되어야 합니다. 감소된 토크, 제한된 속도, 안전 지원 구조물, 통제된 지형, 비상 정지 시스템 및 밀착 텔레메트리 모니터링을 통해 남아 있는 모델링 오류가 확인되는 동안 그 영향을 제한할 수 있습니다. 이후 증거가 축적됨에 따라 테스트 한계를 단계적으로 확장할 수 있습니다.
+
+시뮬레이션과 하드웨어 간의 불일치는 테스트 프레임워크로 피드백되어야 합니다. 예상치 못한 마찰, 구조적 컴플라이언스, 액추에이터 지연, 센서 노이즈, 접촉 행동 또는 열적 효과를 로봇에서 측정하여 시뮬레이션 모델에 반영할 수 있습니다. 이는 물리 테스트가 SIL의 모사도(Fidelity)를 향상시키고, 이후 시뮬레이션의 예측력을 더욱 높여주는 반복적인 루프를 형성합니다.
+
+4족 보행 피지컬 AI(Physical AI)의 경우 SIL과 HIL은 지능형 로코모션 알고리즘과 신뢰할 수 있는 물리적 실행 사이를 이어주는 교량 역할을 합니다. 이를 통해 고장으로 인해 장비가 손상되거나 위험한 운동이 발생하기 전에 모델 기반 제어, 강화학습, 상태 추정, 보행 로직, 실시간 소프트웨어 및 하드웨어 인터페이스를 체계적으로 검증할 수 있습니다.
+
+따라서 강건한 로코모션 테스트 프레임워크는 단위 테스트, 인터페이스 검증, 재현 가능한 SIL 시나리오, 무작위 스트레스 테스트, 결함 주입, 실시간 검증, HIL 실험, 자동화된 메트릭, 회귀 테스트, 추적 가능한 아티팩트 및 명확한 배치 게이트를 결합합니다. 이러한 방법들은 모두 함께 로코모션 검증을 시연 중심의 테스트에서 재현 가능한 엔지니어링 프로세스로 전환시킵니다.
